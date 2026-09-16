@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "lib": ["ES2023"],
+    "noEmit": false,
+    "outDir": ".types/main",
+    "rootDir": "src",
+    "tsBuildInfoFile": ".types/main.tsbuildinfo",
+    "types": ["node", "electron"]
+  },
+  "include": ["src/main/**/*.ts", "src/shared/**/*.ts"]
+}

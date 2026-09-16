@@ -1,0 +1,618 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import {
+  branchMessages,
+  retryTarget,
+  titleFromPrompt,
+  undoLastExchange,
+} from "../shared/conversation";
+import {
+  buildCompactionPrompt,
+  buildSynthesisPrompt,
+  COMPACT_KEEP_MESSAGES,
+  compactMessages,
+  shouldCompact,
+} from "../shared/context";
+import { buildFanOutMessages } from "../shared/fan-out";
+import { PLAN_MODE_INSTRUCTIONS } from "../shared/library";
+import { personalityPrompt } from "../shared/personalities";
+import { estimateTokens } from "../shared/tokens";
+import type {
+  AgentActivity,
+  AgentTodo,
+  PaneMessage,
+  PaneState,
+  PermissionRequest,
+  PersonaFile,
+  SessionState,
+  TokenUsage,
+} from "../shared/types";
+
+// Electron prefixes errors thrown in the main process; the pane only needs the reason.
+export function describeSendError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+}
+
+export interface PaneDefaults {
+  providerId: string;
+  modelId: string;
+}
+
+const FALLBACK_PANE_DEFAULTS: PaneDefaults = { providerId: "claude-code", modelId: "default" };
+
+export function createPane(id: string, defaults: PaneDefaults = FALLBACK_PANE_DEFAULTS): PaneState {
+  return {
+    id,
+    name: `Pane ${id.slice(0, 4)}`,
+    providerId: defaults.providerId,
+    modelId: defaults.modelId,
+    included: true,
+    memoryEnabled: false,
+    messages: [],
+    promptTokens: 0,
+    completionTokens: 0,
+    lastError: null,
+    contextWindow: null,
+    projectPath: null,
+    agentPath: null,
+    planMode: false,
+  };
+}
+
+export const NEW_SESSION_NAME = "New session";
+
+interface LoadedAgent {
+  name: string;
+  body: string;
+  tools?: string[];
+}
+
+// What an agent did during a pane's latest reply in a project folder.
+export interface AgentTurn {
+  turnId: string;
+  activities: AgentActivity[];
+  todos: AgentTodo[];
+  rolledBack: string[] | null;
+  // True when Zenith snapshotted the project first, so undo also covers commands.
+  snapshot: boolean;
+}
+
+export function createEmptySession(id: string, defaults?: PaneDefaults): SessionState {
+  return {
+    id,
+    name: NEW_SESSION_NAME,
+    memoryText: "",
+    personalityId: "",
+    panes: [createPane(crypto.randomUUID(), defaults)],
+    updatedAt: Date.now(),
+  };
+}
+
+export function useHarness(
+  initial: SessionState,
+  persona: Record<PersonaFile, string>,
+  // Called when an agent saved something to the user's profile.
+  onMemoryChanged?: () => void,
+) {
+  const memoryChanged = useRef(onMemoryChanged);
+  useEffect(() => {
+    memoryChanged.current = onMemoryChanged;
+  });
+  const [session, setSession] = useState<SessionState>(initial);
+  const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+
+  const addPane = useCallback((defaults?: PaneDefaults) => {
+    setSession((current) => ({
+      ...current,
+      panes: [...current.panes, createPane(crypto.randomUUID(), defaults)],
+    }));
+  }, []);
+
+  const updatePane = useCallback((paneId: string, patch: Partial<PaneState>) => {
+    setSession((current) => ({
+      ...current,
+      panes: current.panes.map((pane) => (pane.id === paneId ? { ...pane, ...patch } : pane)),
+    }));
+  }, []);
+
+  const setMemoryText = useCallback((memoryText: string) => {
+    setSession((current) => ({ ...current, memoryText }));
+  }, []);
+
+  const setPersonality = useCallback((personalityId: string) => {
+    setSession((current) => ({ ...current, personalityId }));
+  }, []);
+
+  // Only panes with an entry here are streaming; the entry is removed when the reply ends.
+  const streamState = useRef(
+    new Map<string, { requestId: string; assistantId: string; text: string; usage?: TokenUsage }>(),
+  );
+  const [streamingPaneIds, setStreamingPaneIds] = useState<ReadonlySet<string>>(new Set());
+  const [agentTurns, setAgentTurns] = useState<Record<string, AgentTurn>>({});
+  // Agent approvals waiting for the user, oldest first.
+  const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
+
+  const endStream = useCallback((paneId: string) => {
+    streamState.current.delete(paneId);
+    setStreamingPaneIds(new Set(streamState.current.keys()));
+    setPermissions((current) => current.filter((request) => request.paneId !== paneId));
+  }, []);
+
+  const respondPermission = useCallback((permissionId: string, optionId: string | null) => {
+    setPermissions((current) => current.filter((request) => request.permissionId !== permissionId));
+    void window.zenith.chat.respondPermission(permissionId, optionId);
+  }, []);
+
+  const abortPane = useCallback(
+    (paneId: string) => {
+      const state = streamState.current.get(paneId);
+      if (!state) return;
+      void window.zenith.chat.abort(state.requestId);
+      endStream(paneId);
+    },
+    [endStream],
+  );
+
+  const removePane = useCallback(
+    (paneId: string) => {
+      abortPane(paneId);
+      setSession((current) => ({
+        ...current,
+        panes: current.panes.filter((pane) => pane.id !== paneId),
+      }));
+    },
+    [abortPane],
+  );
+
+  const ensureChunkListener = useCallback(() => {
+    if (unsubscribeRef.current) return;
+    const unsubscribePermissions = window.zenith.chat.onPermission((request) => {
+      if (streamState.current.get(request.paneId)?.requestId !== request.requestId) {
+        void window.zenith.chat.respondPermission(request.permissionId, null);
+        return;
+      }
+      setPermissions((current) => [...current, request]);
+    });
+    const unsubscribeChunks = window.zenith.chat.onChunk(({ requestId, paneId, chunk }) => {
+      const state = streamState.current.get(paneId);
+      if (!state || state.requestId !== requestId) return;
+      state.text += chunk.delta;
+      if (chunk.usage) state.usage = chunk.usage;
+      if (chunk.contextUsage) state.usage = chunk.contextUsage;
+      const { assistantId, text, usage: reported } = state;
+      if (chunk.done) endStream(paneId);
+      const { activity, todos, snapshot } = chunk;
+      if (chunk.memoryChanged) memoryChanged.current?.();
+      if (activity || todos || snapshot) {
+        setAgentTurns((current) => {
+          const turn = current[paneId];
+          if (turn?.turnId !== requestId) return current;
+          const activities = activity
+            ? turn.activities.some((item) => item.id === activity.id)
+              ? turn.activities.map((item) => (item.id === activity.id ? activity : item))
+              : [...turn.activities, activity]
+            : turn.activities;
+          return {
+            ...current,
+            [paneId]: {
+              ...turn,
+              activities,
+              todos: todos ?? turn.todos,
+              snapshot: turn.snapshot || snapshot === true,
+            },
+          };
+        });
+      }
+      if (!chunk.delta && !chunk.done) return;
+      setSession((current) => ({
+        ...current,
+        panes: current.panes.map((pane) => {
+          if (pane.id !== paneId) return pane;
+          const messages = [...pane.messages];
+          if (chunk.delta) {
+            const last = messages.at(-1);
+            if (last?.id === assistantId) {
+              messages[messages.length - 1] = { ...last, content: text };
+            } else {
+              messages.push({ id: assistantId, role: "assistant", content: text });
+            }
+          }
+          if (!chunk.done) return { ...pane, messages };
+          const contextWindow = chunk.contextWindow ?? pane.contextWindow;
+          // Prefer the tool's real token counts; fall back to the estimate when none arrive.
+          return reported
+            ? {
+                ...pane,
+                messages,
+                contextWindow,
+                promptTokens: reported.inputTokens,
+                completionTokens: reported.outputTokens,
+              }
+            : { ...pane, messages, contextWindow, completionTokens: estimateTokens(text) };
+        }),
+      }));
+    });
+    unsubscribeRef.current = () => {
+      unsubscribePermissions();
+      unsubscribeChunks();
+    };
+  }, [endStream]);
+
+  const userProfile = persona["USER.md"].trim();
+  const personaText = [
+    persona["SOUL.md"].trim(),
+    userProfile ? `About the user:\n${userProfile}` : "",
+    personalityPrompt(session.personalityId),
+  ]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+
+  // Starts a turn: prompt after history, replacing whatever the pane held before.
+  // outgoingPrompt is what the model receives when it differs from the prompt shown in the pane.
+  const startTurn = useCallback(
+    (
+      pane: PaneState,
+      history: PaneMessage[],
+      prompt: string,
+      outgoingPrompt = prompt,
+      agent?: LoadedAgent,
+    ) => {
+      if (!pane.modelId) return;
+      abortPane(pane.id);
+      ensureChunkListener();
+      const requestId = crypto.randomUUID();
+      streamState.current.set(pane.id, { requestId, assistantId: crypto.randomUUID(), text: "" });
+      setStreamingPaneIds(new Set(streamState.current.keys()));
+      const paneInstructions = [
+        personaText,
+        agent ? `You are acting as the "${agent.name}" agent:\n${agent.body}` : "",
+        pane.planMode ? PLAN_MODE_INSTRUCTIONS : "",
+      ]
+        .filter((part) => part.trim() !== "")
+        .join("\n\n");
+      const outgoing = buildFanOutMessages(
+        { ...pane, messages: history },
+        outgoingPrompt,
+        session.memoryText,
+        paneInstructions,
+      );
+      setAgentTurns((current) =>
+        pane.projectPath
+          ? {
+              ...current,
+              [pane.id]: {
+                turnId: requestId,
+                activities: [],
+                todos: [],
+                rolledBack: null,
+                snapshot: false,
+              },
+            }
+          : Object.fromEntries(Object.entries(current).filter(([id]) => id !== pane.id)),
+      );
+      setSession((current) => ({
+        ...current,
+        name:
+          current.name === NEW_SESSION_NAME && history.length === 0
+            ? titleFromPrompt(prompt)
+            : current.name,
+        panes: current.panes.map((candidate) =>
+          candidate.id === pane.id
+            ? {
+                ...candidate,
+                messages: [...history, { id: crypto.randomUUID(), role: "user", content: prompt }],
+                promptTokens: estimateTokens(outgoing.map((m) => m.content).join("\n")),
+                lastError: null,
+              }
+            : candidate,
+        ),
+      }));
+      void window.zenith.chat
+        .send({
+          requestId,
+          sessionId: session.id,
+          paneId: pane.id,
+          providerId: pane.providerId,
+          modelId: pane.modelId,
+          messages: outgoing,
+          projectPath: pane.projectPath,
+          planMode: pane.planMode,
+          ...(agent?.tools ? { allowedTools: agent.tools } : {}),
+        })
+        .catch((error: unknown) => {
+          // An aborted or superseded request is not an error for the pane.
+          if (streamState.current.get(pane.id)?.requestId !== requestId) return;
+          endStream(pane.id);
+          console.error(`chat.send failed for pane ${pane.id}`, error);
+          const message = describeSendError(error);
+          const lastError = message.includes("No credential configured")
+            ? `No API key configured for ${pane.providerId}.`
+            : message;
+          updatePane(pane.id, { lastError });
+        });
+    },
+    [
+      session.id,
+      session.memoryText,
+      personaText,
+      abortPane,
+      ensureChunkListener,
+      endStream,
+      updatePane,
+    ],
+  );
+
+  const [compactingPaneIds, setCompactingPaneIds] = useState<ReadonlySet<string>>(new Set());
+  const compacting = useRef(new Set<string>());
+
+  // Replaces all but the most recent messages with a summary written by the pane's own model.
+  const summarize = useCallback(
+    async (pane: PaneState, messages: PaneMessage[]): Promise<PaneMessage[]> => {
+      compacting.current.add(pane.id);
+      setCompactingPaneIds(new Set(compacting.current));
+      try {
+        const summary = await window.zenith.chat.complete({
+          sessionId: session.id,
+          providerId: pane.providerId,
+          modelId: pane.modelId,
+          messages: [
+            {
+              role: "user",
+              content: buildCompactionPrompt(messages.slice(0, -COMPACT_KEEP_MESSAGES)),
+            },
+          ],
+        });
+        if (summary.trim() === "") throw new Error("The model returned an empty summary.");
+        return compactMessages(messages, summary, () => crypto.randomUUID());
+      } finally {
+        compacting.current.delete(pane.id);
+        setCompactingPaneIds(new Set(compacting.current));
+      }
+    },
+    [session.id],
+  );
+
+  // Agent files are read once and reused; the Library clears this after edits.
+  const agentCache = useRef(new Map<string, LoadedAgent>());
+  const loadAgent = useCallback(
+    async (pane: PaneState): Promise<LoadedAgent | undefined> => {
+      const path = pane.agentPath;
+      if (!path) return undefined;
+      const cached = agentCache.current.get(path);
+      if (cached) return cached;
+      const read = () => window.zenith.library.read(path);
+      // The main process only reads files from its latest scan, so rescan once if needed.
+      const result = await read().catch(async () => {
+        await window.zenith.library.list(
+          session.panes.flatMap((candidate) =>
+            candidate.projectPath ? [candidate.projectPath] : [],
+          ),
+        );
+        return read();
+      });
+      const agent: LoadedAgent = {
+        name: result.item.name,
+        body: result.body,
+        ...(result.item.tools ? { tools: result.item.tools } : {}),
+      };
+      agentCache.current.set(path, agent);
+      return agent;
+    },
+    [session.panes],
+  );
+
+  const sendWithHistory = useCallback(
+    async (pane: PaneState, history: PaneMessage[], prompt: string, outgoingPrompt = prompt) => {
+      if (!pane.modelId || compacting.current.has(pane.id)) return;
+      let agent: LoadedAgent | undefined;
+      try {
+        agent = await loadAgent(pane);
+      } catch (error: unknown) {
+        updatePane(pane.id, {
+          lastError: `Couldn't load this pane's agent: ${describeSendError(error)}`,
+        });
+        return;
+      }
+      let messages = history;
+      if (shouldCompact({ ...pane, messages: history })) {
+        abortPane(pane.id);
+        try {
+          messages = await summarize(pane, history);
+        } catch (error: unknown) {
+          // Send anyway; the provider reports it if the context really overflows.
+          console.error(`Automatic compaction failed for pane ${pane.id}`, error);
+        }
+      }
+      startTurn(pane, messages, prompt, outgoingPrompt, agent);
+    },
+    [abortPane, summarize, startTurn, loadAgent, updatePane],
+  );
+
+  const compactPane = useCallback(
+    async (paneId: string) => {
+      const pane = session.panes.find((candidate) => candidate.id === paneId);
+      if (!pane?.modelId || pane.messages.length <= COMPACT_KEEP_MESSAGES) return;
+      if (streamState.current.has(paneId) || compacting.current.has(paneId)) return;
+      try {
+        const messages = await summarize(pane, pane.messages);
+        const lastId = pane.messages.at(-1)?.id;
+        setSession((current) => ({
+          ...current,
+          panes: current.panes.map((candidate) =>
+            // Skip if the conversation changed while the summary was being written.
+            candidate.id === paneId && candidate.messages.at(-1)?.id === lastId
+              ? {
+                  ...candidate,
+                  messages,
+                  promptTokens: estimateTokens(messages.map((m) => m.content).join("\n")),
+                  completionTokens: 0,
+                  lastError: null,
+                }
+              : candidate,
+          ),
+        }));
+      } catch (error: unknown) {
+        updatePane(paneId, { lastError: `Could not compact: ${describeSendError(error)}` });
+      }
+    },
+    [session.panes, summarize, updatePane],
+  );
+
+  // Mixture of Agents: every included pane's latest answer goes to the aggregator pane's model,
+  // whose combined answer streams into a new pane that is left out of broadcasts.
+  const synthesize = useCallback(
+    (aggregatorPaneId: string) => {
+      const answered = session.panes.filter(
+        (pane) =>
+          pane.included &&
+          pane.messages.at(-1)?.role === "assistant" &&
+          !streamState.current.has(pane.id),
+      );
+      const aggregator = session.panes.find((pane) => pane.id === aggregatorPaneId);
+      if (!aggregator || answered.length < 2) return;
+      const lead = answered.find((pane) => pane.id === aggregatorPaneId) ?? answered[0];
+      const question = lead && retryTarget(lead.messages)?.prompt;
+      if (!question) return;
+      const answers = answered.map((pane) => ({
+        source: `${pane.name} (${pane.providerId}${pane.modelId && pane.modelId !== "default" ? ` · ${pane.modelId}` : ""})`,
+        content: pane.messages.at(-1)?.content ?? "",
+      }));
+      const synthesis: PaneState = {
+        ...createPane(crypto.randomUUID(), {
+          providerId: aggregator.providerId,
+          modelId: aggregator.modelId,
+        }),
+        name: "Synthesis",
+        included: false,
+      };
+      setSession((current) => ({ ...current, panes: [...current.panes, synthesis] }));
+      startTurn(
+        synthesis,
+        [],
+        `Synthesize ${answers.length} answers: ${question}`,
+        buildSynthesisPrompt(question, answers),
+      );
+    },
+    [session.panes, startTurn],
+  );
+
+  const sendToPane = useCallback(
+    (pane: PaneState, prompt: string, outgoingPrompt = prompt) =>
+      void sendWithHistory(pane, pane.messages, prompt, outgoingPrompt),
+    [sendWithHistory],
+  );
+
+  const retryPane = useCallback(
+    (paneId: string) => {
+      const pane = session.panes.find((candidate) => candidate.id === paneId);
+      const target = pane && retryTarget(pane.messages);
+      if (pane && target) void sendWithHistory(pane, target.history, target.prompt);
+    },
+    [session.panes, sendWithHistory],
+  );
+
+  const undoPane = useCallback(
+    (paneId: string) => {
+      abortPane(paneId);
+      setSession((current) => ({
+        ...current,
+        panes: current.panes.map((pane) =>
+          pane.id === paneId
+            ? { ...pane, messages: undoLastExchange(pane.messages), lastError: null }
+            : pane,
+        ),
+      }));
+    },
+    [abortPane],
+  );
+
+  // Forks a pane into a new pane beside it, keeping messages up to messageId.
+  const branchPane = useCallback((paneId: string, messageId: string) => {
+    setSession((current) => {
+      const index = current.panes.findIndex((pane) => pane.id === paneId);
+      const source = current.panes[index];
+      if (!source) return current;
+      const branch: PaneState = {
+        ...source,
+        id: crypto.randomUUID(),
+        name: `${source.name} (branch)`,
+        messages: branchMessages(source.messages, messageId, () => crypto.randomUUID()),
+        lastError: null,
+      };
+      const panes = [...current.panes];
+      panes.splice(index + 1, 0, branch);
+      return { ...current, panes };
+    });
+  }, []);
+
+  // outgoingPrompt is what models receive when it differs from the text shown, e.g. a skill.
+  const sendPrompt = useCallback(
+    (prompt: string, outgoingPrompt = prompt) => {
+      for (const pane of session.panes) {
+        if (pane.included) sendToPane(pane, prompt, outgoingPrompt);
+      }
+    },
+    [session.panes, sendToPane],
+  );
+
+  // Restores files the agent changed during the pane's latest reply.
+  const rollbackTurn = useCallback(
+    async (paneId: string) => {
+      const turn = agentTurns[paneId];
+      if (!turn || streamState.current.has(paneId)) return;
+      try {
+        const restored = await window.zenith.projects.rollback(turn.turnId);
+        setAgentTurns((current) =>
+          current[paneId]?.turnId === turn.turnId
+            ? { ...current, [paneId]: { ...turn, rolledBack: restored } }
+            : current,
+        );
+      } catch (error: unknown) {
+        updatePane(paneId, {
+          lastError: `Could not undo file changes: ${describeSendError(error)}`,
+        });
+      }
+    },
+    [agentTurns, updatePane],
+  );
+
+  const abortAll = useCallback(() => {
+    for (const paneId of [...streamState.current.keys()]) abortPane(paneId);
+  }, [abortPane]);
+
+  return {
+    session,
+    setSession,
+    streamingPaneIds,
+    agentTurns,
+    rollbackTurn,
+    compactingPaneIds,
+    compactPane,
+    synthesize,
+    permissions,
+    respondPermission,
+    addPane,
+    removePane,
+    updatePane,
+    setMemoryText,
+    setPersonality,
+    sendPrompt,
+    sendToPane,
+    retryPane,
+    undoPane,
+    branchPane,
+    abortPane,
+    abortAll,
+    clearAgentCache: () => agentCache.current.clear(),
+  };
+}
+
+export async function persistSession(session: SessionState): Promise<void> {
+  await window.zenith.sessions.save({ ...session, updatedAt: Date.now() });
+}
+
+export async function loadSessionOrCreate(id: string): Promise<SessionState> {
+  const existing = await window.zenith.sessions.load(id);
+  return existing ?? createEmptySession(id);
+}

@@ -1,0 +1,57 @@
+# Zenith harness threat model
+
+**Date:** 2026-09-15 (Phase M security review)
+**Scope:** the multi-provider harness on branch `multi-provider-harness`: the Electron app, its main process, Zenith's own agent, Claude Code agent mode, Hermes Agent and OpenCode over ACP, MCP servers, bots, scheduled tasks, and user-defined API providers. `docs/threat-model.md` describes the retired workbench design and stays as history.
+
+## What Zenith protects
+
+- **Project files** the user opens as a project folder, and everything outside them.
+- **Secrets:** API keys and bot tokens, which live in `credentials.json`, encrypted with the operating system's secure storage (`safeStorage`). Zenith never reads other tools' saved credentials or sign-in tokens.
+- **The user's machine**, which must not run commands or tools without approval.
+- **Conversation history and profile** (`zenith.db`, `SOUL.md`, `USER.md`), which are stored unencrypted in the user data folder.
+
+## Who and what is not trusted
+
+- **Models and their replies:** a reply can contain prompt injection copied from a repository, web page, or tool output.
+- **Project folders:** files, symbolic links, Git hooks and config, and package scripts.
+- **Remote bot messages** from Telegram, Discord, Slack, WhatsApp, Signal, and Home Assistant.
+- **MCP servers and external CLIs** (Claude Code, Hermes Agent, OpenCode). They run with the user's own authority once started, so Zenith can only control what it asks them to do.
+- **Provider endpoints the user adds**, which receive the prompts and the key the user gives them.
+
+The user and the user's operating-system account are trusted. Code already running as that user can read Zenith's data, so Zenith doesn't try to defend against it.
+
+## Boundaries and controls
+
+| Boundary                            | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                        | Where                                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Renderer (web page) to main process | Sandboxed renderer with context isolation, no Node integration, and no webviews. Navigation, new windows, downloads, and permission requests are refused. The CSP allows only the app's own scripts, styles, images, and fonts, with no network access. Model replies render as Markdown without raw HTML, and links render as text. Every IPC call must come from the top-level page. Credentials can be saved or deleted but never read back. | `window-security.ts`, `vite.renderer.config.ts`, `Markdown.tsx`, `ipc.ts` (`handle`) |
+| Packaged app                        | Electron fuses: RunAsNode, `NODE_OPTIONS`, and `--inspect` are off, ASAR integrity is validated, and the app loads only from its ASAR.                                                                                                                                                                                                                                                                                                          | `forge.config.ts`                                                                    |
+| Agent tools (Zenith's own agent)    | Edits, writes, commands, Remember, and MCP tools ask with a diff or command preview. Reading inside the project is free. A path that resolves outside the project, including through a symbolic link, always asks and carries a warning, whatever the permission rules or an earlier "allow all" choice say. Grep inside the project skips files reached through outward links. Plan mode leaves out every tool that changes things.            | `native-agent.ts`, `tools.ts`, `claude-agent.ts` (`escapesProject`)                  |
+| Agent tools (Claude Code)           | Runs with `--permission-mode manual` and Zenith as the permission prompt tool. Edits and commands ask through Zenith with the same outside-path rule. Settings sources are empty, so the project's Claude settings and hooks don't load.                                                                                                                                                                                                        | `claude-agent.ts`                                                                    |
+| Permission rules                    | Deny wins when it is the last match. An allow rule never matches a shell command containing `; & \| $ < > ( ) { }`, backticks, or newlines. Rules are validated before saving.                                                                                                                                                                                                                                                                  | `shared/permissions.ts`                                                              |
+| Undo                                | A snapshot of the project, stored in Zenith's own Git directory, is taken before each reply that can change files. Snapshot Git commands turn off fsmonitor and external diff programs.                                                                                                                                                                                                                                                         | `git.ts`                                                                             |
+| Workspace panel                     | Every path is resolved against the project's real path, and `..` or symbolic links that leave it are refused. The terminal runs only commands the user types.                                                                                                                                                                                                                                                                                   | `workspace.ts`                                                                       |
+| Remote messages (bots)              | A person must pair with a single-use code shown on the desktop, and a code is cancelled after five wrong guesses. Bots answer with chat connections only: agents with tools are refused, and no project folder is passed. WhatsApp webhooks listen on 127.0.0.1, and every request is checked against the app secret with a timing-safe comparison. Home Assistant trusts only the user it recorded in the event context.                       | `bot-manager.ts`, `transports.ts`                                                    |
+| Scheduled tasks                     | Run as plain chats with no project folder, and agent connections are refused, because nobody is present to approve tools.                                                                                                                                                                                                                                                                                                                       | `scheduler.ts`, `ipc.ts`                                                             |
+| User-defined providers              | Base URLs must use https, except for this computer and private network addresses, and may not contain credentials. Keys go only to the encrypted store, never into `providers.json`.                                                                                                                                                                                                                                                            | `shared/custom-providers.ts`, `custom-providers.ts`                                  |
+| External CLIs in chat mode          | Run read-only in an empty Zenith-owned folder with their own sign-in. OpenCode's permissions are forced to "ask".                                                                                                                                                                                                                                                                                                                               | `ipc.ts` (`cliSandbox`, `openCodePermissions`)                                       |
+
+## Found and fixed in this review
+
+1. **Symbolic links let reads and rule-allowed writes leave the project without asking.** "Inside the project" was decided by path text. A link such as `project/notes -> ~/.ssh` made `notes/id_rsa` look like a project file, so a prompt-injected model could read it with no prompt, and `allow Write *` could write outside. Zenith now decides on real paths, and such calls always ask with a warning. Tested in `native-agent.test.ts`.
+2. **IPC calls weren't checked for their sender frame.** Frames were already blocked by the CSP and window guards; the main process now also refuses calls that don't come from the top-level page.
+
+## Residual risks (accepted, with reasons)
+
+- **A compromised renderer can do what the user can do in Zenith:** run terminal commands, edit `mcp.json`, and approve prompts. The controls above aim to keep the renderer uncompromised rather than to limit it afterwards.
+- **Approved commands and MCP servers run with full user authority.** Undo restores the project folder only, not changes a command makes elsewhere, and approval cards say so.
+- **Hermes Agent and OpenCode enforce their own permissions.** Zenith's permission rules and outside-path checks don't apply to them, because their tool names and paths differ.
+- **Claude Code's own reading tools** (Read, Glob, Grep) run without asking inside the folder Claude Code decides is the project, unless a rule names them.
+- **History and profile files are not encrypted at rest.**
+- **The packaged app accepts Chromium's `--remote-debugging-port` switch.** Only a local process running as the same user could use it.
+- **Models from user-added providers receive whatever the user sends them.**
+
+## Still to do in Phase M
+
+- **Platform checks:** verify on Windows and Linux, including launching project formatters from `.cmd` shims without a shell.
+- **Signed packages:** macOS signing and notarization, and Windows code signing, with credentials read from environment variables.

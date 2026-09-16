@@ -1,0 +1,54 @@
+# Dependencies and package-manager state
+node_modules/
+.npm/
+
+# Build and package outputs
+out/
+dist/
+release/
+.vite/
+.webpack/
+.types/
+
+# Test and coverage outputs
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Temporary and cache files
+.cache/
+.tmp/
+tmp/
+temp/
+*.tmp
+*.log
+
+# Local Zenith runtime state
+state.db
+state.db-*
+secrets.bin
+journals/
+logs/
+.zenith/local/
+
+# Credentials and machine-local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and operating system
+.idea/
+.vscode/*.local.json
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Diagnostic bundles may contain local paths
+diagnostics-*.zip
+diagnostics-*.json
+
+# Local git worktrees (superpowers:using-git-worktrees)
+.worktrees/

@@ -1,0 +1,383 @@
+import { createHash, randomUUID } from "node:crypto";
+
+import type {
+  AgentActivity,
+  AgentTodo,
+  ChatChunk,
+  ChatMessage,
+  Model,
+  PermissionChoice,
+  PermissionPrompt,
+  ProviderAdapter,
+  SendMessageRequest,
+  TokenUsage,
+} from "../../shared/types";
+import { asRecord, DEFAULT_MODEL_ID } from "../cli/cli-adapter";
+import { assertSafeModelId, buildCliPrompt, withSystemPreamble } from "../cli/transcript";
+import { AcpConnection } from "./connection";
+
+const PROTOCOL_VERSION = 1;
+
+export interface AcpAgentSpec {
+  id: string;
+  label: string;
+  args: string[];
+  // Extra environment for the agent, e.g. OpenCode permission rules.
+  env?: NodeJS.ProcessEnv;
+}
+
+export interface AcpAdapterDeps {
+  resolveBinary(): Promise<string | undefined>;
+  childEnv(binaryPath: string): NodeJS.ProcessEnv;
+  cwd: string;
+  clientVersion: string;
+  // The user's MCP servers in ACP's session/new shape.
+  mcpServers(): Promise<unknown[]>;
+}
+
+interface NewSessionResult {
+  sessionId: string;
+  models?: { availableModels?: { modelId: string; name?: string }[] };
+}
+
+interface ConversationSession {
+  sessionId: string;
+  modelId: string;
+  // Hash of every message the agent has seen in this session, including its last reply.
+  fingerprint: string;
+  cwd: string;
+}
+
+type TurnEvent =
+  | { delta: string }
+  | { activity: AgentActivity }
+  | { todos: AgentTodo[] }
+  | { permission: Params; respond(result: unknown): void };
+
+const ACP_TOOL_STATUS: Record<string, AgentActivity["status"]> = {
+  pending: "running",
+  in_progress: "running",
+  completed: "done",
+  failed: "failed",
+};
+
+// Maps ACP tool_call / tool_call_update and plan updates to Zenith's live task view.
+export function toTaskEvent(
+  update: Params,
+  known: Map<string, AgentActivity>,
+): TurnEvent | undefined {
+  const kind = update["sessionUpdate"];
+  if (kind === "tool_call" || kind === "tool_call_update") {
+    const id = typeof update["toolCallId"] === "string" ? update["toolCallId"] : "";
+    if (!id) return undefined;
+    const previous = known.get(id);
+    const title = typeof update["title"] === "string" ? update["title"] : previous?.title;
+    const status =
+      typeof update["status"] === "string" ? ACP_TOOL_STATUS[update["status"]] : previous?.status;
+    const activity: AgentActivity = {
+      id,
+      tool: typeof update["kind"] === "string" ? update["kind"] : (previous?.tool ?? "tool"),
+      title: title ?? "Tool call",
+      status: status ?? "running",
+    };
+    known.set(id, activity);
+    return { activity };
+  }
+  if (kind === "plan" && Array.isArray(update["entries"])) {
+    const todos = update["entries"].flatMap((entry): AgentTodo[] => {
+      const record = asRecord(entry);
+      const status = record?.["status"];
+      return typeof record?.["content"] === "string" &&
+        (status === "pending" || status === "in_progress" || status === "completed")
+        ? [{ content: record["content"], status }]
+        : [];
+    });
+    return { todos };
+  }
+  return undefined;
+}
+type Params = Record<string, unknown>;
+
+export function fingerprintMessages(messages: readonly ChatMessage[]): string {
+  const canonical = messages.map(({ role, content }) => [role, content]);
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+const PERMISSION_KINDS = new Set<PermissionChoice["kind"]>([
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+]);
+
+export function toPermissionPrompt(params: Params): PermissionPrompt {
+  const toolCall = asRecord(params["toolCall"]);
+  const title =
+    typeof toolCall?.["title"] === "string" ? toolCall["title"] : "The agent wants to use a tool";
+  const options = (Array.isArray(params["options"]) ? params["options"] : [])
+    .map(asRecord)
+    .flatMap((option): PermissionChoice[] => {
+      const id = option?.["optionId"];
+      const kind = option?.["kind"];
+      if (typeof id !== "string" || !PERMISSION_KINDS.has(kind as PermissionChoice["kind"]))
+        return [];
+      const label = typeof option?.["name"] === "string" ? option["name"] : id;
+      return [{ id, label, kind: kind as PermissionChoice["kind"] }];
+    });
+  return { title, options };
+}
+
+// Runs an ACP agent as one long-lived process and keeps one agent session per pane.
+// A session is reused while the pane's history matches what the agent already saw;
+// after retry, undo, branch, or a memory change Zenith starts a new session with the transcript.
+export function createAcpAdapter(
+  spec: AcpAgentSpec,
+  deps: AcpAdapterDeps,
+): ProviderAdapter & {
+  dispose(): void;
+} {
+  let connection: Promise<AcpConnection> | undefined;
+  let knownModels: Model[] = [];
+  const conversations = new Map<string, ConversationSession>();
+  const turns = new Map<string, (event: TurnEvent) => void>();
+  // Models are only reported by session/new, so listing them opens a session kept for the next turn.
+  let spareSession: Promise<string> | undefined;
+  // Latest context window size per agent session, from usage_update.
+  const contextWindows = new Map<string, number>();
+  const taskActivities = new Map<string, AgentActivity>();
+
+  async function connect(): Promise<AcpConnection> {
+    const binary = await deps.resolveBinary();
+    if (!binary) throw new Error(`${spec.label} is not installed.`);
+    const conn = new AcpConnection({
+      command: binary,
+      args: spec.args,
+      cwd: deps.cwd,
+      env: { ...deps.childEnv(binary), ...spec.env },
+    });
+    conn.onNotification("session/update", (params) => {
+      const update = asRecord(params["update"]);
+      const content = asRecord(update?.["content"]);
+      if (
+        typeof params["sessionId"] === "string" &&
+        update?.["sessionUpdate"] === "usage_update" &&
+        typeof update["size"] === "number" &&
+        update["size"] > 0
+      ) {
+        contextWindows.set(params["sessionId"], update["size"]);
+      }
+      if (
+        typeof params["sessionId"] === "string" &&
+        update?.["sessionUpdate"] === "agent_message_chunk" &&
+        content?.["type"] === "text" &&
+        typeof content["text"] === "string"
+      ) {
+        turns.get(params["sessionId"])?.({ delta: content["text"] });
+      } else if (typeof params["sessionId"] === "string" && update) {
+        const turn = turns.get(params["sessionId"]);
+        const event = turn && toTaskEvent(update, taskActivities);
+        if (turn && event) turn(event);
+      }
+    });
+    conn.onRequest(
+      "session/request_permission",
+      (params) =>
+        new Promise((respond) => {
+          const turn =
+            typeof params["sessionId"] === "string" ? turns.get(params["sessionId"]) : undefined;
+          if (turn) turn({ permission: params, respond });
+          else respond({ outcome: { outcome: "cancelled" } });
+        }),
+    );
+    try {
+      await conn.request("initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+        // Zenith lends no file system or terminal; the agent works with its own tools.
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientInfo: { name: "zenith", version: deps.clientVersion },
+      });
+    } catch (error) {
+      conn.close();
+      throw error;
+    }
+    return conn;
+  }
+
+  async function getConnection(): Promise<AcpConnection> {
+    const existing = connection && (await connection.catch(() => undefined));
+    if (existing && !existing.closed) return existing;
+    conversations.clear();
+    spareSession = undefined;
+    connection = connect();
+    connection.catch(() => {
+      connection = undefined;
+    });
+    return connection;
+  }
+
+  async function newSession(conn: AcpConnection, cwd = deps.cwd): Promise<string> {
+    const result = await conn.request<NewSessionResult>("session/new", {
+      cwd,
+      mcpServers: await deps.mcpServers(),
+    });
+    const available = result.models?.availableModels ?? [];
+    if (available.length > 0) {
+      knownModels = available.map((model) => ({
+        id: model.modelId,
+        label: model.name ?? model.modelId,
+      }));
+    }
+    return result.sessionId;
+  }
+
+  // The spare session was opened in the sandbox, so only sandbox conversations can use it.
+  function takeSession(conn: AcpConnection, cwd: string): Promise<string> {
+    if (cwd !== deps.cwd) return newSession(conn, cwd);
+    const spare = spareSession;
+    spareSession = undefined;
+    return spare ?? newSession(conn, cwd);
+  }
+
+  return {
+    id: spec.id,
+
+    async listModels() {
+      if (knownModels.length === 0 && !spareSession) {
+        const opening = getConnection().then((conn) => newSession(conn));
+        spareSession = opening;
+        opening.catch(() => {
+          if (spareSession === opening) spareSession = undefined;
+        });
+      }
+      await spareSession?.catch(() => undefined);
+      return [{ id: DEFAULT_MODEL_ID, label: "Default" }, ...knownModels];
+    },
+
+    async validateCredential() {
+      return true;
+    },
+
+    dispose() {
+      void connection?.then((conn) => conn.close()).catch(() => undefined);
+      connection = undefined;
+    },
+
+    async *sendMessage(request: SendMessageRequest): AsyncIterable<ChatChunk> {
+      const conn = await getConnection();
+      const key = request.conversationId ?? randomUUID();
+      const history = request.messages.slice(0, -1);
+      const latest = request.messages.at(-1);
+      if (latest?.role !== "user")
+        throw new Error("The conversation must end with a user message.");
+
+      const cwd = request.projectPath ?? deps.cwd;
+      const existing = conversations.get(key);
+      const reuse =
+        existing?.cwd === cwd &&
+        existing.modelId === request.model &&
+        existing.fingerprint === fingerprintMessages(history);
+      conversations.delete(key);
+
+      let sessionId: string;
+      let promptText: string;
+      if (reuse) {
+        sessionId = existing.sessionId;
+        promptText = latest.content;
+      } else {
+        sessionId = await takeSession(conn, cwd);
+        if (request.model !== DEFAULT_MODEL_ID) {
+          await conn.request("session/set_model", {
+            sessionId,
+            modelId: assertSafeModelId(request.model),
+          });
+        }
+        promptText = withSystemPreamble(buildCliPrompt(request.messages));
+      }
+
+      const queue: TurnEvent[] = [];
+      let wake: (() => void) | undefined;
+      turns.set(sessionId, (event) => {
+        queue.push(event);
+        wake?.();
+      });
+
+      let finished = false;
+      let failure: Error | undefined;
+      let usage: TokenUsage | undefined;
+      const onAbort = () => conn.notify("session/cancel", { sessionId });
+      request.signal?.addEventListener("abort", onAbort, { once: true });
+      const prompt = conn
+        .request<{ stopReason?: string; usage?: Params }>("session/prompt", {
+          sessionId,
+          prompt: [{ type: "text", text: promptText }],
+        })
+        .then((result) => {
+          const input = result.usage?.["inputTokens"];
+          const output = result.usage?.["outputTokens"];
+          if (typeof input === "number" && typeof output === "number") {
+            usage = { inputTokens: input, outputTokens: output };
+          }
+        })
+        .catch((error: unknown) => {
+          failure = error instanceof Error ? error : new Error(String(error));
+        })
+        .finally(() => {
+          finished = true;
+          wake?.();
+        });
+
+      let reply = "";
+      try {
+        while (true) {
+          const event = queue.shift();
+          if (!event) {
+            if (finished) break;
+            await new Promise<void>((resolve) => (wake = resolve));
+            wake = undefined;
+            continue;
+          }
+          if ("delta" in event) {
+            reply += event.delta;
+            yield { delta: event.delta, done: false };
+          } else if ("activity" in event) {
+            yield { delta: "", done: false, activity: event.activity };
+          } else if ("todos" in event) {
+            yield { delta: "", done: false, todos: event.todos };
+          } else {
+            const choice =
+              request.signal?.aborted || !request.requestPermission
+                ? undefined
+                : await request.requestPermission(toPermissionPrompt(event.permission));
+            event.respond(
+              choice === undefined
+                ? { outcome: { outcome: "cancelled" } }
+                : { outcome: { outcome: "selected", optionId: choice } },
+            );
+          }
+        }
+        await prompt;
+      } finally {
+        turns.delete(sessionId);
+        request.signal?.removeEventListener("abort", onAbort);
+      }
+      if (failure) throw failure;
+      if (request.signal?.aborted) return;
+      conversations.set(key, {
+        sessionId,
+        cwd,
+        modelId: request.model,
+        fingerprint: fingerprintMessages([
+          ...request.messages,
+          { role: "assistant", content: reply },
+        ]),
+      });
+      const contextWindow = contextWindows.get(sessionId);
+      yield {
+        delta: "",
+        done: true,
+        ...(usage ? { usage } : {}),
+        ...(contextWindow ? { contextWindow } : {}),
+      };
+    },
+  };
+}
