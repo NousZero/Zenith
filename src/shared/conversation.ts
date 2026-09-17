@@ -3,11 +3,15 @@ import type { PaneMessage } from "./types";
 // The last user prompt and the history before it, so it can be sent again.
 export function retryTarget(
   messages: readonly PaneMessage[],
-): { history: PaneMessage[]; prompt: string } | undefined {
+): { history: PaneMessage[]; prompt: string; images?: PaneMessage["images"] } | undefined {
   const index = messages.findLastIndex((message) => message.role === "user");
   const prompt = messages[index];
   if (!prompt) return undefined;
-  return { history: messages.slice(0, index), prompt: prompt.content };
+  return {
+    history: messages.slice(0, index),
+    prompt: prompt.content,
+    ...(prompt.images ? { images: prompt.images } : {}),
+  };
 }
 
 // Removes the last user prompt and everything after it.

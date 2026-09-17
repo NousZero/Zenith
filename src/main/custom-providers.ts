@@ -76,7 +76,13 @@ export function customAdapter(provider: Stored, credentials: CredentialStore): P
         request.messages.map((message) =>
           message.role === "assistant"
             ? { role: "assistant" as const, content: message.content, toolCalls: [] }
-            : { role: message.role, content: message.content },
+            : message.role === "user"
+              ? {
+                  role: "user" as const,
+                  content: message.content,
+                  ...(message.images ? { images: message.images } : {}),
+                }
+              : { role: "system" as const, content: message.content },
         ),
         [],
         request.signal,

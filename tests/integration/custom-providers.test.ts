@@ -145,5 +145,26 @@ describe("custom providers", () => {
     expect(seen.every((request) => request.auth === "Bearer sk-local")).toBe(true);
     // Plain chats send no tools list, which some servers reject when empty.
     expect(JSON.parse(seen.at(-1)?.body ?? "{}")).not.toHaveProperty("tools");
+
+    // A pasted image arrives as an image part next to the text.
+    for await (const chunk of adapter.sendMessage({
+      model: "alpha",
+      messages: [
+        {
+          role: "user",
+          content: "What is this?",
+          images: [{ id: "i.png", mediaType: "image/png", data: "iVBORw0KGgo=" }],
+        },
+      ],
+    })) {
+      void chunk;
+    }
+    const withImage = JSON.parse(seen.at(-1)?.body ?? "{}") as {
+      messages: { content: unknown }[];
+    };
+    expect(withImage.messages[0]?.content).toEqual([
+      { type: "text", text: "What is this?" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo=" } },
+    ]);
   });
 });

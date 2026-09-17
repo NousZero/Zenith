@@ -55,6 +55,7 @@ import {
 import { Switch } from "./components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { AgentPanel, DiffView } from "./AgentPanel";
+import { AttachmentImage } from "./AttachmentImage";
 import { EmptyState } from "./EmptyState";
 import {
   COMPACT_KEEP_MESSAGES,
@@ -766,8 +767,19 @@ export function Pane(props: {
               message.role === "user" ? (
                 <div
                   key={message.id}
-                  className="self-end whitespace-pre-wrap break-words rounded-lg bg-secondary px-3.5 py-2 text-[13px] leading-relaxed text-secondary-foreground"
+                  className="flex max-w-full flex-col gap-2 self-end whitespace-pre-wrap break-words rounded-lg bg-secondary px-3.5 py-2 text-[13px] leading-relaxed text-secondary-foreground"
                 >
+                  {message.images?.length ? (
+                    <span className="flex flex-wrap justify-end gap-1.5">
+                      {message.images.map((image) => (
+                        <AttachmentImage
+                          key={image.id}
+                          id={image.id}
+                          className="max-h-40 max-w-60 border border-border object-contain"
+                        />
+                      ))}
+                    </span>
+                  ) : null}
                   {message.content}
                 </div>
               ) : message.role === "assistant" ? (

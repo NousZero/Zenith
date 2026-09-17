@@ -1,8 +1,10 @@
-import type { ChatMessage } from "../../shared/types";
+import type { ChatMessage, ImageAttachment } from "../../shared/types";
 
 export interface CliPrompt {
   system: string | undefined;
   prompt: string;
+  // Images on the latest message; earlier images travel only as text in the transcript.
+  images?: ImageAttachment[];
 }
 
 // CLI tools run one stateless process per turn, so earlier turns travel inside the prompt.
@@ -19,14 +21,16 @@ export function buildCliPrompt(messages: ChatMessage[]): CliPrompt {
   }
 
   const system = systemText === "" ? undefined : systemText;
+  const images = latest.images?.length ? { images: latest.images } : {};
   const history = conversation.slice(0, -1);
-  if (history.length === 0) return { system, prompt: latest.content };
+  if (history.length === 0) return { system, prompt: latest.content, ...images };
 
   const transcript = history
     .map((message) => `<${message.role}>\n${message.content}\n</${message.role}>`)
     .join("\n\n");
   return {
     system,
+    ...images,
     prompt: `Here is our conversation so far:\n\n${transcript}\n\nReply to my latest message:\n\n<user>\n${latest.content}\n</user>`,
   };
 }

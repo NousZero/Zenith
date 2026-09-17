@@ -71,7 +71,17 @@ export async function describeContext(input: {
       ),
     );
   }
-  if (latest) sections.push(section("Latest message", latest.content));
+  if (latest) {
+    const count = latest.images?.length ?? 0;
+    sections.push(
+      section(
+        count > 0
+          ? `Latest message, with ${count} ${count === 1 ? "image" : "images"} (not counted)`
+          : "Latest message",
+        latest.content,
+      ),
+    );
+  }
 
   const note = [
     OWN_INSTRUCTIONS[input.providerId] ?? "",

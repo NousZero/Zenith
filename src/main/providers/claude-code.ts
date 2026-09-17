@@ -6,6 +6,7 @@ import {
   type CliLineEvent,
   type CliToolSpec,
 } from "../cli/cli-adapter";
+import { anthropicContent } from "./content";
 
 // Claude Code takes an alias or a full model ID. Aliases follow whatever the installed version
 // maps them to; a full ID pins one exact model. "Custom model…" in the pane accepts any ID.
@@ -102,7 +103,7 @@ export const claudeCodeSpec: CliToolSpec = {
     return MODELS;
   },
 
-  buildInvocation(model, { system, prompt }) {
+  buildInvocation(model, { system, prompt, images }) {
     const args = [
       "-p",
       "--output-format",
@@ -118,8 +119,21 @@ export const claudeCodeSpec: CliToolSpec = {
       `--system-prompt=${system ?? NEUTRAL_SYSTEM_PROMPT}`,
     ];
     if (model) args.push(`--model=${model}`);
+    const env = { CLAUDE_CODE_DISABLE_THINKING: "1" };
+    // Images need Claude Code's JSON input, which carries content blocks.
+    if (images?.some((image) => image.data)) {
+      args.push("--input-format", "stream-json");
+      const message = {
+        type: "user",
+        message: {
+          role: "user",
+          content: anthropicContent({ role: "user", content: prompt, images }),
+        },
+      };
+      return { args, stdin: `${JSON.stringify(message)}\n`, env };
+    }
     // Hidden thinking costs tokens the pane never shows; chat comparisons run without it.
-    return { args, stdin: prompt, env: { CLAUDE_CODE_DISABLE_THINKING: "1" } };
+    return { args, stdin: prompt, env };
   },
 
   parseLine: parseClaudeCodeLine,

@@ -173,6 +173,8 @@ const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
   `,
+  // Images attached to a message, as a JSON list of references to files in the attachments folder.
+  `ALTER TABLE messages ADD COLUMN images TEXT;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

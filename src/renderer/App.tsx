@@ -66,7 +66,7 @@ import {
   TopBar,
   type ActivityId,
 } from "./Workbench";
-import type { ConnectionStatus, PersonaFile, SessionState } from "../shared/types";
+import type { ConnectionStatus, ImageAttachment, PersonaFile, SessionState } from "../shared/types";
 import {
   DEFAULT_CLI_MODEL_ID,
   preferredConnection,
@@ -368,9 +368,9 @@ export function App() {
   // Multiple panes are on hold: each session shows and sends to its first pane only. Extra panes
   // in older sessions are kept, not deleted.
   const pane = session.panes[0];
-  function sendToCurrent(prompt: string, outgoing = prompt) {
+  function sendToCurrent(prompt: string, outgoing = prompt, images: ImageAttachment[] = []) {
     const current = session.panes[0];
-    if (current) sendToPane(current, prompt, outgoing);
+    if (current) sendToPane(current, prompt, outgoing, images);
   }
 
   // A new approval opens the bottom panel (on its Approvals tab), so a waiting agent is noticed.
@@ -768,7 +768,7 @@ export function App() {
         prompt={composerPrompt}
         streaming={streamingPaneIds.size > 0}
         onPromptChange={setComposerPrompt}
-        onSend={sendToCurrent}
+        onSend={(prompt, images) => sendToCurrent(prompt, prompt, images)}
         onStop={abortAll}
       />
     </>

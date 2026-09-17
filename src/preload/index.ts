@@ -15,6 +15,7 @@ import type {
   ConnectionStatus,
   ContextSnapshot,
   HistoryExcerpt,
+  ImageAttachment,
   PermissionRequest,
   ScheduledTask,
   SemanticStatus,
@@ -31,6 +32,11 @@ const zenithApi: ZenithApi = {
   connections: {
     list: (refresh?: boolean): Promise<ConnectionStatus[]> =>
       ipcRenderer.invoke("connections:list", refresh === true),
+  },
+  attachments: {
+    save: (mediaType: string, data: string): Promise<ImageAttachment> =>
+      ipcRenderer.invoke("attachments:save", { mediaType, data }),
+    read: (id: string): Promise<string> => ipcRenderer.invoke("attachments:read", id),
   },
   files: {
     saveAs: (input: {

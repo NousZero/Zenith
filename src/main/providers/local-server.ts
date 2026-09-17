@@ -1,6 +1,7 @@
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../../shared/types";
 import { asRecord } from "../cli/cli-adapter";
 import { readSseLines } from "./sse";
+import { openAiContent } from "./content";
 
 export interface LocalServerOptions {
   id: string;
@@ -55,7 +56,10 @@ export function createLocalServerAdapter(options: LocalServerOptions): ProviderA
             model: req.model,
             stream: true,
             stream_options: { include_usage: true },
-            messages: req.messages.map(({ role, content }) => ({ role, content })),
+            messages: req.messages.map((message) => ({
+              role: message.role,
+              content: openAiContent(message),
+            })),
           }),
           ...(req.signal ? { signal: req.signal } : {}),
         });

@@ -1,7 +1,8 @@
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, ImagePlus, Square, X } from "lucide-react";
 import { useRef, useState } from "react";
 
-import type { PaneState } from "../shared/types";
+import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
+import type { ImageAttachment, PaneState } from "../shared/types";
 import { completeCommandName, parseSlashCommand, type Command } from "./commands";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
@@ -21,13 +22,48 @@ export function Composer(props: {
   prompt: string;
   streaming: boolean;
   onPromptChange(prompt: string): void;
-  onSend(prompt: string): void;
+  onSend(prompt: string, images: ImageAttachment[]): void;
   onStop(): void;
 }) {
   const { prompt, onPromptChange: setPrompt } = props;
   const [activeIndex, setActiveIndex] = useState(0);
   const [unknownCommand, setUnknownCommand] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [images, setImages] = useState<{ ref: ImageAttachment; url: string }[]>([]);
+  const [imageError, setImageError] = useState("");
+
+  // Stores each image in Zenith's data folder and keeps a preview for this message.
+  async function attach(files: readonly File[]) {
+    setImageError("");
+    for (const file of files.filter((item) => item.type.startsWith("image/"))) {
+      if (images.length >= MAX_IMAGES_PER_MESSAGE) {
+        setImageError(`Up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
+        return;
+      }
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        let binary = "";
+        for (let index = 0; index < bytes.length; index += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+        }
+        const data = btoa(binary);
+        const ref = await window.zenith.attachments.save(file.type, data);
+        setImages((current) =>
+          current.some((item) => item.ref.id === ref.id)
+            ? current
+            : [...current, { ref, url: `data:${file.type};base64,${data}` }],
+        );
+      } catch (error: unknown) {
+        setImageError(
+          (error instanceof Error ? error.message : String(error)).replace(
+            /^Error invoking remote method '[^']+': (?:Error: )?/,
+            "",
+          ),
+        );
+      }
+    }
+  }
 
   const slash = parseSlashCommand(prompt);
   // The menu lists commands while the name is still being typed.
@@ -42,7 +78,8 @@ export function Composer(props: {
   const ready = included.filter(
     (pane) => pane.modelId !== "" && props.readyProviders.includes(pane.providerId),
   );
-  const canSend = prompt.trim() !== "" && ready.length > 0;
+  const imagesRefused = images.length > 0 && ready.some((pane) => !takesImages(pane.providerId));
+  const canSend = (prompt.trim() !== "" || images.length > 0) && ready.length > 0 && !imagesRefused;
 
   function resize() {
     const element = textareaRef.current;
@@ -85,8 +122,12 @@ export function Composer(props: {
   function submit() {
     if (runSlash()) return;
     if (!canSend) return;
-    props.onSend(prompt.trim());
+    props.onSend(
+      prompt.trim(),
+      images.map((item) => item.ref),
+    );
     setPrompt("");
+    setImages([]);
     requestAnimationFrame(resize);
   }
 
@@ -127,7 +168,44 @@ export function Composer(props: {
           ))}
         </ul>
       )}
-      <div className="rounded-lg border border-input bg-card transition-colors duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25">
+      <div
+        className="rounded-lg border border-input bg-card transition-colors duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25"
+        onDragOver={(event) => {
+          if ([...event.dataTransfer.items].some((item) => item.type.startsWith("image/"))) {
+            event.preventDefault();
+          }
+        }}
+        onDrop={(event) => {
+          const files = [...event.dataTransfer.files];
+          if (files.some((file) => file.type.startsWith("image/"))) {
+            event.preventDefault();
+            void attach(files);
+          }
+        }}
+      >
+        {images.length > 0 && (
+          <ul aria-label="Attached images" className="flex flex-wrap gap-2 px-3 pt-3">
+            {images.map((item) => (
+              <li key={item.ref.id} className="relative">
+                <img
+                  src={item.url}
+                  alt="Attached image"
+                  className="size-16 border border-border object-cover"
+                />
+                <button
+                  type="button"
+                  aria-label="Remove image"
+                  onClick={() =>
+                    setImages((current) => current.filter((other) => other.ref.id !== item.ref.id))
+                  }
+                  className="absolute -right-1.5 -top-1.5 grid size-5 cursor-pointer place-items-center rounded-full border border-border bg-popover text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           ref={textareaRef}
           id={COMPOSER_INPUT_ID}
@@ -138,6 +216,13 @@ export function Composer(props: {
           aria-activedescendant={menu[active] ? `composer-command-${menu[active].name}` : undefined}
           rows={1}
           value={prompt}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files];
+            if (files.some((file) => file.type.startsWith("image/"))) {
+              event.preventDefault();
+              void attach(files);
+            }
+          }}
           onChange={(event) => {
             setPrompt(event.target.value);
             setUnknownCommand(undefined);
@@ -170,7 +255,13 @@ export function Composer(props: {
         />
         <div className="flex items-center gap-2 px-2 pb-2 pl-3">
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-            {unknownCommand !== undefined ? (
+            {imageError ? (
+              <span className="text-xs text-danger">{imageError}</span>
+            ) : imagesRefused ? (
+              <span className="text-xs text-warning">
+                This connection can't read images. Remove them or choose another connection.
+              </span>
+            ) : unknownCommand !== undefined ? (
               <span className="text-xs text-warning">
                 Unknown command /{unknownCommand}. Type / to see commands.
               </span>
@@ -209,6 +300,26 @@ export function Composer(props: {
               })
             )}
           </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            multiple
+            hidden
+            onChange={(event) => {
+              void attach([...(event.target.files ?? [])]);
+              event.target.value = "";
+            }}
+          />
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Attach images"
+            title="Attach images (or paste or drop them)"
+            onClick={() => fileRef.current?.click()}
+          >
+            <ImagePlus />
+          </Button>
           <kbd className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
             {isMac ? "⌘" : "Ctrl"} ↵
           </kbd>

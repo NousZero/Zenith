@@ -36,6 +36,7 @@ import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git"
 import { createMcpConfig } from "./mcp-config";
 import { createPtyTerminals } from "./pty-terminal";
 import { describeContext } from "./context-snapshot";
+import { createAttachmentStore } from "./attachments";
 import { createCustomProviderStore, customAdapter, customModel } from "./custom-providers";
 import type { CustomProviderInput } from "../shared/custom-providers";
 import { createScheduler } from "./scheduler";
@@ -70,6 +71,7 @@ import { openDatabase } from "./database";
 import { createHistoryStore } from "./history-store";
 import { createSessionStore, importLegacyJsonSessions } from "./session-store";
 import { estimateTokens } from "../shared/tokens";
+import { takesImages } from "../shared/images";
 import { parsePermissionRules } from "../shared/permissions";
 import type {
   ChatChunk,
@@ -159,6 +161,7 @@ export function registerIpcHandlers(options: {
     () => childProcessEnv(),
   );
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
+  const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
   const customProviders = createCustomProviderStore(
     options.join(options.userDataPath, "providers.json"),
     credentials,
@@ -504,6 +507,15 @@ export function registerIpcHandlers(options: {
   handle("persona:get", async (_event, file: unknown) =>
     readFile(personaPath(file), "utf8").catch(() => ""),
   );
+  handle("attachments:save", async (_event, payload: { mediaType: unknown; data: unknown }) =>
+    attachments.save(String(payload.mediaType ?? ""), String(payload.data ?? "")),
+  );
+  // A data URL for showing an attached image in the window.
+  handle("attachments:read", async (_event, id: unknown) => {
+    const image = await attachments.read(String(id));
+    return `data:${image.mediaType};base64,${image.data}`;
+  });
+
   // Writes text the window prepared to a file the user chooses in the system save dialog.
   handle(
     "files:saveAs",
@@ -784,6 +796,27 @@ export function registerIpcHandlers(options: {
       try {
         const projectPath = await validProjectPath(payload.projectPath);
         const adapter = registry.get(payload.providerId);
+        const hasImages = payload.messages.some((message) => message.images?.length);
+        if (hasImages && !takesImages(payload.providerId)) {
+          throw new Error(
+            "This connection can't read images. Remove the image, or switch to Claude Code, an API provider, Ollama, or LM Studio.",
+          );
+        }
+        // Images travel as references from the window; the data is loaded only here.
+        const messages = hasImages
+          ? await Promise.all(
+              payload.messages.map(async (message) =>
+                message.images?.length
+                  ? {
+                      ...message,
+                      images: await Promise.all(
+                        message.images.map((image) => attachments.read(image.id)),
+                      ),
+                    }
+                  : message,
+              ),
+            )
+          : payload.messages;
         // Recorded for the context inspector; a failure here never blocks the reply.
         void describeContext({
           providerId: payload.providerId,
@@ -831,7 +864,7 @@ export function registerIpcHandlers(options: {
         let reply = "";
         for await (const chunk of adapter.sendMessage({
           model: payload.modelId,
-          messages: payload.messages,
+          messages,
           signal: controller.signal,
           conversationId: payload.paneId,
           turnId: payload.requestId,

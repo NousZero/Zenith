@@ -135,7 +135,13 @@ export async function* runNativeAgent(
       message.role === "system"
         ? []
         : message.role === "user"
-          ? [{ role: "user", content: message.content }]
+          ? [
+              {
+                role: "user",
+                content: message.content,
+                ...(message.images ? { images: message.images } : {}),
+              },
+            ]
           : [{ role: "assistant", content: message.content, toolCalls: [] }],
     ),
   ];

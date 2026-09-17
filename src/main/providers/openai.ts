@@ -1,4 +1,5 @@
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../../shared/types";
+import { openAiContent } from "./content";
 import { readSseLines } from "./sse";
 
 const API_BASE = "https://api.openai.com/v1";
@@ -39,7 +40,7 @@ export function createOpenAiAdapter(getApiKey: () => Promise<string>): ProviderA
           stream: true,
           messages: req.messages.map((message) => ({
             role: message.role,
-            content: message.content,
+            content: openAiContent(message),
           })),
         }),
         ...(req.signal ? { signal: req.signal } : {}),

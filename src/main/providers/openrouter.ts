@@ -1,4 +1,5 @@
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../../shared/types";
+import { openAiContent } from "./content";
 import { readSseLines } from "./sse";
 
 const API_BASE = "https://openrouter.ai/api/v1";
@@ -34,7 +35,7 @@ export function createOpenRouterAdapter(getApiKey: () => Promise<string>): Provi
           stream: true,
           messages: req.messages.map((message) => ({
             role: message.role,
-            content: message.content,
+            content: openAiContent(message),
           })),
         }),
         ...(req.signal ? { signal: req.signal } : {}),

@@ -5,6 +5,7 @@ import type {
   ProviderAdapter,
   SendMessageRequest,
 } from "../../shared/types";
+import { anthropicContent } from "./content";
 import { readSseLines } from "./sse";
 
 const API_BASE = "https://api.anthropic.com/v1";
@@ -12,7 +13,7 @@ const ANTHROPIC_VERSION = "2023-06-01";
 
 function splitSystemPrompt(messages: ChatMessage[]): {
   system: string | undefined;
-  rest: { role: "user" | "assistant"; content: string }[];
+  rest: { role: "user" | "assistant"; content: string | Record<string, unknown>[] }[];
 } {
   const systemLines = messages.filter((message) => message.role === "system").map((m) => m.content);
   const rest = messages
@@ -20,7 +21,7 @@ function splitSystemPrompt(messages: ChatMessage[]): {
       (message): message is ChatMessage & { role: "user" | "assistant" } =>
         message.role !== "system",
     )
-    .map((message) => ({ role: message.role, content: message.content }));
+    .map((message) => ({ role: message.role, content: anthropicContent(message) }));
   return { system: systemLines.length > 0 ? systemLines.join("\n") : undefined, rest };
 }
 

@@ -34,6 +34,24 @@ interface MessageRow {
   id: string;
   role: PaneMessage["role"];
   content: string;
+  images: string | null;
+}
+
+function parseImages(text: string | null): PaneMessage["images"] {
+  if (!text) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) return undefined;
+    const images = parsed.flatMap((item: unknown) => {
+      const image = item as { id?: unknown; mediaType?: unknown } | null;
+      return typeof image?.id === "string" && typeof image.mediaType === "string"
+        ? [{ id: image.id, mediaType: image.mediaType }]
+        : [];
+    });
+    return images.length > 0 ? images : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createSessionStore(db: DatabaseSync, now: () => number = Date.now): SessionStore {
@@ -49,7 +67,7 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
        FROM panes WHERE session_id = ? ORDER BY position`,
     ),
     messages: db.prepare(
-      "SELECT id, role, content FROM messages WHERE pane_id = ? ORDER BY position",
+      "SELECT id, role, content, images FROM messages WHERE pane_id = ? ORDER BY position",
     ),
     upsertSession: db.prepare(
       `INSERT INTO sessions (id, name, memory_text, personality_id, created_at, updated_at)
@@ -76,12 +94,14 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
       "DELETE FROM panes WHERE session_id = ? AND id NOT IN (SELECT value FROM json_each(?))",
     ),
     upsertMessage: db.prepare(
-      `INSERT INTO messages (id, pane_id, parent_id, position, role, content, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO messages (id, pane_id, parent_id, position, role, content, created_at, images)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET
          pane_id = excluded.pane_id, parent_id = excluded.parent_id,
-         position = excluded.position, role = excluded.role, content = excluded.content
+         position = excluded.position, role = excluded.role, content = excluded.content,
+         images = excluded.images
        WHERE messages.content IS NOT excluded.content
+          OR messages.images IS NOT excluded.images
           OR messages.position IS NOT excluded.position
           OR messages.parent_id IS NOT excluded.parent_id
           OR messages.pane_id IS NOT excluded.pane_id`,
@@ -94,7 +114,10 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
 
   function loadPane(row: PaneRow): PaneState {
     const messages = (statements.messages.all(row.id) as unknown as MessageRow[]).map(
-      ({ id, role, content }) => ({ id, role, content }),
+      ({ id, role, content, images }) => {
+        const attached = parseImages(images);
+        return { id, role, content, ...(attached ? { images: attached } : {}) };
+      },
     );
     return {
       id: row.id,
@@ -181,6 +204,9 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
               message.role,
               message.content,
               timestamp,
+              message.images?.length
+                ? JSON.stringify(message.images.map(({ id, mediaType }) => ({ id, mediaType })))
+                : null,
             );
           });
           statements.deleteStaleMessages.run(

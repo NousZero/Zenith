@@ -4,9 +4,18 @@ import type { LibraryItem, LibraryKind } from "./library";
 
 export type ChatRole = "user" | "assistant" | "system";
 
+// An image pasted into a message. Stored by reference; `data` (base64) is filled in only by the
+// main process when a request is sent.
+export interface ImageAttachment {
+  id: string;
+  mediaType: string;
+  data?: string;
+}
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  images?: ImageAttachment[];
 }
 
 // A message stored in a pane's conversation; the id is stable across saves.
@@ -286,6 +295,12 @@ export interface ZenithApi {
   };
   providers: {
     listModels(providerId: string): Promise<Model[]>;
+  };
+  attachments: {
+    // Stores a pasted image (base64) and returns its reference; rejects unsupported or oversized images.
+    save(mediaType: string, data: string): Promise<ImageAttachment>;
+    // A data URL for displaying a stored image.
+    read(id: string): Promise<string>;
   };
   files: {
     // Opens the system save dialog and writes the text there; null when the user cancels.

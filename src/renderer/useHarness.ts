@@ -20,6 +20,7 @@ import { estimateTokens } from "../shared/tokens";
 import type {
   AgentActivity,
   AgentTodo,
+  ImageAttachment,
   PaneMessage,
   PaneState,
   PermissionRequest,
@@ -257,6 +258,7 @@ export function useHarness(
       prompt: string,
       outgoingPrompt = prompt,
       agent?: LoadedAgent,
+      images: ImageAttachment[] = [],
     ) => {
       if (!pane.modelId) return;
       abortPane(pane.id);
@@ -276,6 +278,7 @@ export function useHarness(
         outgoingPrompt,
         session.memoryText,
         paneInstructions,
+        images,
       );
       setAgentTurns((current) =>
         pane.projectPath
@@ -301,7 +304,15 @@ export function useHarness(
           candidate.id === pane.id
             ? {
                 ...candidate,
-                messages: [...history, { id: crypto.randomUUID(), role: "user", content: prompt }],
+                messages: [
+                  ...history,
+                  {
+                    id: crypto.randomUUID(),
+                    role: "user",
+                    content: prompt,
+                    ...(images.length ? { images } : {}),
+                  },
+                ],
                 promptTokens: estimateTokens(outgoing.map((m) => m.content).join("\n")),
                 lastError: null,
               }
@@ -403,7 +414,13 @@ export function useHarness(
   );
 
   const sendWithHistory = useCallback(
-    async (pane: PaneState, history: PaneMessage[], prompt: string, outgoingPrompt = prompt) => {
+    async (
+      pane: PaneState,
+      history: PaneMessage[],
+      prompt: string,
+      outgoingPrompt = prompt,
+      images: ImageAttachment[] = [],
+    ) => {
       if (!pane.modelId || compacting.current.has(pane.id)) return;
       let agent: LoadedAgent | undefined;
       try {
@@ -424,7 +441,7 @@ export function useHarness(
           console.error(`Automatic compaction failed for pane ${pane.id}`, error);
         }
       }
-      startTurn(pane, messages, prompt, outgoingPrompt, agent);
+      startTurn(pane, messages, prompt, outgoingPrompt, agent, images);
     },
     [abortPane, summarize, startTurn, loadAgent, updatePane],
   );
@@ -498,8 +515,8 @@ export function useHarness(
   );
 
   const sendToPane = useCallback(
-    (pane: PaneState, prompt: string, outgoingPrompt = prompt) =>
-      void sendWithHistory(pane, pane.messages, prompt, outgoingPrompt),
+    (pane: PaneState, prompt: string, outgoingPrompt = prompt, images: ImageAttachment[] = []) =>
+      void sendWithHistory(pane, pane.messages, prompt, outgoingPrompt, images),
     [sendWithHistory],
   );
 
@@ -507,7 +524,9 @@ export function useHarness(
     (paneId: string) => {
       const pane = session.panes.find((candidate) => candidate.id === paneId);
       const target = pane && retryTarget(pane.messages);
-      if (pane && target) void sendWithHistory(pane, target.history, target.prompt);
+      if (pane && target) {
+        void sendWithHistory(pane, target.history, target.prompt, target.prompt, target.images);
+      }
     },
     [session.panes, sendWithHistory],
   );

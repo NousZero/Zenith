@@ -1,4 +1,5 @@
-import type { TokenUsage } from "../../shared/types";
+import type { ImageAttachment, TokenUsage } from "../../shared/types";
+import { anthropicContent, openAiContent } from "../providers/content";
 import { asRecord } from "../cli/cli-adapter";
 import { readSseLines } from "../providers/sse";
 import type { ToolSpec } from "./tools";
@@ -11,7 +12,8 @@ export interface ToolCall {
 }
 
 export type AgentMessage =
-  | { role: "system" | "user"; content: string }
+  | { role: "system"; content: string }
+  | { role: "user"; content: string; images?: ImageAttachment[] }
   | { role: "assistant"; content: string; toolCalls: ToolCall[] }
   | { role: "tool"; toolCallId: string; name: string; content: string };
 
@@ -84,6 +86,9 @@ export function openAiCompatibleModel(options: {
             }
             if (message.role === "tool") {
               return { role: "tool", tool_call_id: message.toolCallId, content: message.content };
+            }
+            if (message.role === "user") {
+              return { role: "user", content: openAiContent(message) };
             }
             return { role: message.role, content: message.content };
           }),
@@ -161,7 +166,14 @@ export function anthropicModel(options: {
       };
       for (const message of messages) {
         if (message.role === "system") continue;
-        if (message.role === "user") push("user", { type: "text", text: message.content });
+        if (message.role === "user") {
+          const content = anthropicContent(message);
+          for (const block of typeof content === "string"
+            ? [{ type: "text", text: content }]
+            : content) {
+            push("user", block);
+          }
+        }
         if (message.role === "assistant") {
           if (message.content) push("assistant", { type: "text", text: message.content });
           for (const call of message.toolCalls) {

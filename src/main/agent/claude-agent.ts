@@ -16,6 +16,7 @@ import type {
 import { asRecord, DEFAULT_MODEL_ID, lastNonEmptyLine, parseJsonLine } from "../cli/cli-adapter";
 import { assertSafeModelId, buildCliPrompt } from "../cli/transcript";
 import { parseClaudeCodeLine } from "../providers/claude-code";
+import { anthropicContent } from "../providers/content";
 
 const KILL_GRACE_MS = 3_000;
 const MAX_STDERR_CHARS = 16_000;
@@ -297,7 +298,13 @@ export async function* runClaudeAgent(
   request.signal?.addEventListener("abort", kill, { once: true });
 
   const send = (message: unknown) => child.stdin.write(`${JSON.stringify(message)}\n`);
-  send({ type: "user", message: { role: "user", content: prompt } });
+  send({
+    type: "user",
+    message: {
+      role: "user",
+      content: anthropicContent({ role: "user", content: prompt, images: built.images ?? [] }),
+    },
+  });
 
   const turnId = request.turnId ?? "";
   const activities = new Map<string, AgentActivity>();
