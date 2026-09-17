@@ -6,6 +6,13 @@ export type ChatRole = "user" | "assistant" | "system";
 
 // An image pasted into a message. Stored by reference; `data` (base64) is filled in only by the
 // main process when a request is sent.
+// Whether agent commands run in the operating system's sandbox; `available` names it, or is null
+// where this system has none.
+export interface SandboxStatus {
+  available: string | null;
+  enabled: boolean;
+}
+
 export interface ImageAttachment {
   id: string;
   mediaType: string;
@@ -415,6 +422,10 @@ export interface ZenithApi {
     remove(id: string): Promise<ScheduledTask[]>;
     runNow(id: string): Promise<ScheduledTask>;
     onChanged(listener: (tasks: ScheduledTask[]) => void): () => void;
+  };
+  sandbox: {
+    status(): Promise<SandboxStatus>;
+    set(enabled: boolean): Promise<SandboxStatus>;
   };
   permissions: {
     // Agent permission rules as text, one "allow|ask|deny Tool pattern" per line.

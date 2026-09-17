@@ -16,6 +16,7 @@ import type {
   ContextSnapshot,
   HistoryExcerpt,
   ImageAttachment,
+  SandboxStatus,
   PermissionRequest,
   ScheduledTask,
   SemanticStatus,
@@ -192,6 +193,10 @@ const zenithApi: ZenithApi = {
       ipcRenderer.on("schedule:changed", handler);
       return () => ipcRenderer.removeListener("schedule:changed", handler);
     },
+  },
+  sandbox: {
+    status: (): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:status"),
+    set: (enabled: boolean): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:set", enabled),
   },
   permissions: {
     get: (): Promise<string> => ipcRenderer.invoke("permissions:get"),

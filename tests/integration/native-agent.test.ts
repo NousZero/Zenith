@@ -327,6 +327,39 @@ describe("native agent loop", () => {
     await expect(readFile(join(dir, "secret", "planted.txt"), "utf8")).rejects.toThrow();
   });
 
+  it.skipIf(process.platform !== "darwin")(
+    "runs sandboxed commands without asking and asks before leaving the sandbox",
+    async () => {
+      const server = await fakeServer([
+        () =>
+          openAiTools(
+            { name: "Bash", args: { command: "echo sandboxed-ran" } },
+            { name: "Bash", args: { command: "echo outside-ran", outside_sandbox: true } },
+          ),
+        () => openAiText("Done."),
+      ]);
+      closeServer = server.close;
+      const model = openAiCompatibleModel({
+        label: "Test",
+        baseUrl: server.url,
+        headers: async () => ({}),
+      });
+
+      const { prompts, chunks } = await run(model, () => "deny", false, {
+        sandbox: async () => ({ kind: "seatbelt", tempRoot: join(dir, "sandbox-tmp") }),
+      });
+
+      expect(prompts.map((prompt) => prompt.title)).toEqual(["Run a command outside the sandbox"]);
+      const results = JSON.stringify(server.requests[1]);
+      expect(results).toContain("sandboxed-ran");
+      expect(results).not.toContain("outside-ran\\n");
+      expect(results).toContain("The user denied this action");
+      expect(
+        chunks.some((chunk) => chunk.activity?.title === "Run in sandbox: echo sandboxed-ran"),
+      ).toBe(true);
+    },
+  );
+
   it("remembers a fact in the user's profile after approval", async () => {
     await writeFile(join(dir, "USER.md"), "- Uses TypeScript\n");
     const server = await fakeServer([

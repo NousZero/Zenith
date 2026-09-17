@@ -16,8 +16,9 @@ import {
   type ProviderApi,
 } from "../shared/custom-providers";
 import { PERMISSION_RULES_EXAMPLE } from "../shared/permissions";
-import type { ConnectionStatus, PersonaFile } from "../shared/types";
+import type { ConnectionStatus, PersonaFile, SandboxStatus } from "../shared/types";
 import { Button } from "./components/ui/button";
+import { Switch } from "./components/ui/switch";
 import { Textarea } from "./components/ui/textarea";
 import { cn } from "./lib/utils";
 import { providerMeta } from "./providers";
@@ -566,6 +567,52 @@ export function AppearanceSection() {
           </li>
         ))}
       </ul>
+    </Section>
+  );
+}
+
+export function SandboxSection() {
+  const [status, setStatus] = useState<SandboxStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    window.zenith.sandbox
+      .status()
+      .then((value) => {
+        if (!cancelled) setStatus(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Section
+      title="Sandboxed commands"
+      actions={
+        status?.available ? (
+          <Switch
+            aria-label="Run agent commands in the sandbox"
+            checked={status.enabled}
+            onCheckedChange={(checked) => void window.zenith.sandbox.set(checked).then(setStatus)}
+          />
+        ) : undefined
+      }
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Agent commands run in {status?.available ?? "the operating system's sandbox"}: no network
+        except this computer's own addresses, and changes only inside the project folder. Commands
+        that stay inside it run without asking. If the sandbox blocks one, the agent can ask to run
+        it outside, and you decide. Applies to Zenith's own agent and Claude Code; your permission
+        rules still apply, and undo still covers the project.
+      </p>
+      {status && !status.available && (
+        <p className="text-xs text-warning">
+          {navigator.userAgent.includes("Linux")
+            ? "Install bubblewrap (bwrap) to use this on Linux."
+            : "This system has no supported sandbox yet, so commands keep asking."}
+        </p>
+      )}
     </Section>
   );
 }

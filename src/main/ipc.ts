@@ -35,6 +35,12 @@ import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createPtyTerminals } from "./pty-terminal";
+import {
+  CLAUDE_SANDBOX_SETTINGS,
+  detectSandbox,
+  SANDBOX_LABELS,
+  type SandboxKind,
+} from "./agent/sandbox";
 import { describeContext } from "./context-snapshot";
 import { createAttachmentStore } from "./attachments";
 import { createCustomProviderStore, customAdapter, customModel } from "./custom-providers";
@@ -180,6 +186,17 @@ export function registerIpcHandlers(options: {
   };
   const permissionRulesText = () =>
     (settingStatements.get.get("permission_rules") as { value: string } | undefined)?.value ?? "";
+  // Sandboxed agent commands, off until the user turns them on.
+  let sandboxKind: Promise<SandboxKind | undefined> | undefined;
+  const availableSandbox = () => (sandboxKind ??= detectSandbox(childProcessEnv()));
+  const sandboxEnabled = () =>
+    (settingStatements.get.get("sandbox_commands") as { value: string } | undefined)?.value ===
+    "on";
+  const bashSandbox = async () => {
+    if (!sandboxEnabled()) return undefined;
+    const kind = await availableSandbox();
+    return kind ? { kind, tempRoot: options.join(options.userDataPath, "sandbox-tmp") } : undefined;
+  };
   const permissionRules = () => {
     try {
       return parsePermissionRules(permissionRulesText());
@@ -335,6 +352,7 @@ export function registerIpcHandlers(options: {
               permissionRules,
               afterEdit,
               extraTools: mcpTools.forProject,
+              sandbox: bashSandbox,
             },
           )
         : adapter.sendMessage(request),
@@ -354,6 +372,10 @@ export function registerIpcHandlers(options: {
               syncTodos: projects.syncTodos,
               mcpConfigPath: mcp.claudeConfigPath,
               permissionRules,
+              sandboxSettings: async () =>
+                sandboxEnabled() && (await availableSandbox())
+                  ? CLAUDE_SANDBOX_SETTINGS
+                  : undefined,
             },
           )
         : claudeCodeChat.sendMessage(request),
@@ -693,6 +715,15 @@ export function registerIpcHandlers(options: {
     }),
   );
   handle("library:remove", async (_event, path: unknown) => library.remove(String(path)));
+  handle("sandbox:status", async () => {
+    const kind = await availableSandbox();
+    return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
+  });
+  handle("sandbox:set", async (_event, enabled: unknown) => {
+    settingStatements.set.run("sandbox_commands", enabled === true ? "on" : "off");
+    const kind = await availableSandbox();
+    return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
+  });
   handle("permissions:get", async () => permissionRulesText());
   handle("permissions:set", async (_event, text: unknown) => {
     if (typeof text !== "string") throw new TypeError("Permission rules must be text.");

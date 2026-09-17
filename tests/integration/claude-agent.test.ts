@@ -32,7 +32,7 @@ describe("Claude Code agent mode", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function run(choice: string | undefined, rules = "") {
+  async function run(choice: string | undefined, rules = "", sandboxSettings?: string) {
     const store = createProjectStore(db);
     const prompts: PermissionPrompt[] = [];
     const chunks: ChatChunk[] = [];
@@ -49,11 +49,15 @@ describe("Claude Code agent mode", () => {
       },
       {
         resolveBinary: async () => fakeClaude,
-        childEnv: () => ({ PATH: process.env["PATH"] ?? "" }),
+        childEnv: () => ({
+          PATH: process.env["PATH"] ?? "",
+          FAKE_CLAUDE_ARGS_FILE: join(dir, "args.json"),
+        }),
         saveCheckpoint: store.saveCheckpoint,
         syncTodos: store.syncTodos,
         mcpConfigPath: async () => undefined,
         permissionRules: () => parsePermissionRules(rules),
+        sandboxSettings: async () => sandboxSettings,
       },
     )) {
       chunks.push(chunk);
@@ -100,6 +104,17 @@ describe("Claude Code agent mode", () => {
     const last = chunks.filter((chunk) => chunk.activity?.id === "tool-1").at(-1);
     expect(last?.activity?.status).toBe("denied");
     expect(chunks.map((chunk) => chunk.delta).join("")).toBe("Could not edit.");
+  });
+
+  it("passes Claude Code its sandbox settings only when sandboxing is on", async () => {
+    await run("allow");
+    const plain = JSON.parse(await readFile(join(dir, "args.json"), "utf8")) as string[];
+    expect(plain).not.toContain("--settings");
+
+    await writeFile(join(project, "notes.txt"), "alpha\n");
+    await run("allow", "", '{"sandbox":{"enabled":true}}');
+    const sandboxed = JSON.parse(await readFile(join(dir, "args.json"), "utf8")) as string[];
+    expect(sandboxed[sandboxed.indexOf("--settings") + 1]).toBe('{"sandbox":{"enabled":true}}');
   });
 
   it("follows permission rules without asking", async () => {

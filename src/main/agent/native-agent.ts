@@ -21,6 +21,7 @@ import {
 import type { ExtraTools } from "./mcp-client";
 import type { AgentMessage, ToolCall, ToolModel } from "./models";
 import {
+  type BashSandbox,
   needsApproval,
   rememberPrompt,
   runRemember,
@@ -52,6 +53,8 @@ export interface NativeAgentDeps {
   afterEdit?(projectPath: string, filePath: string): Promise<string>;
   // Tools from the user's MCP servers.
   extraTools?(projectPath: string): Promise<ExtraTools>;
+  // The operating-system sandbox for commands, when the user turned it on and it is available.
+  sandbox?(): Promise<BashSandbox | undefined>;
 }
 
 export function agentPrompt(projectPath: string, subagent: boolean): string {
@@ -121,6 +124,7 @@ export async function* runNativeAgent(
   for (const spec of extraSpecs) toolNames.add(spec.name);
   const tools = [...TOOL_SPECS.filter((tool) => toolNames.has(tool.name)), ...extraSpecs];
   const rules = deps.permissionRules?.() ?? [];
+  const sandbox = await deps.sandbox?.();
   const context = subagent ? "" : await projectContext(projectPath);
   const system = [
     agentPrompt(projectPath, subagent),
@@ -189,10 +193,19 @@ export async function* runNativeAgent(
 
     for (const call of turn.toolCalls) {
       const input = parseArguments(call);
+      // Sandboxed commands run without asking; leaving the sandbox always asks.
+      const outsideSandbox =
+        call.name === "Bash" && sandbox !== undefined && input?.["outside_sandbox"] === true;
+      const sandboxed = call.name === "Bash" && sandbox !== undefined && !outsideSandbox;
+      const title = input ? describeToolUse(call.name, input, projectPath) : call.name;
       const base: AgentActivity = {
         id: call.id,
         tool: call.name,
-        title: input ? describeToolUse(call.name, input, projectPath) : call.name,
+        title: sandboxed
+          ? title.replace(/^Run /, "Run in sandbox: ")
+          : outsideSandbox
+            ? title.replace(/^Run /, "Run outside sandbox: ")
+            : title,
         status: "running",
       };
       let result: string;
@@ -220,8 +233,8 @@ export async function* runNativeAgent(
         const asks =
           escapes ||
           decision === "ask" ||
-          (decision === undefined && needsApproval(call.name, input, projectPath));
-        if (allowed && asks && (escapes || !allowAll.has(call.name))) {
+          (decision === undefined && needsApproval(call.name, input, projectPath) && !sandboxed);
+        if (allowed && asks && (escapes || outsideSandbox || !allowAll.has(call.name))) {
           yield activity({ ...base, status: "awaiting-approval" });
           const prompt: PermissionPrompt =
             call.name === "Remember"
@@ -231,13 +244,20 @@ export async function* runNativeAgent(
             request.signal?.aborted || !request.requestPermission
               ? undefined
               : await request.requestPermission(
-                  escapes && !prompt.warning
+                  outsideSandbox
                     ? {
                         ...prompt,
+                        title: "Run a command outside the sandbox",
                         warning:
-                          "This path leads outside the project folder, directly or through a symbolic link.",
+                          "The sandbox blocked this command. Outside it, the command can use the network and change files anywhere you can.",
                       }
-                    : prompt,
+                    : escapes && !prompt.warning
+                      ? {
+                          ...prompt,
+                          warning:
+                            "This path leads outside the project folder, directly or through a symbolic link.",
+                        }
+                      : prompt,
                 );
           if (choice === "allow-tool") allowAll.add(call.name);
           allowed = choice === "allow" || choice === "allow-tool";
@@ -278,7 +298,7 @@ export async function* runNativeAgent(
                 break;
               }
               case "Bash":
-                result = await runBash(projectPath, input, deps.childEnv, request.signal);
+                result = await runBash(projectPath, input, deps.childEnv, request.signal, sandbox);
                 break;
               case "Remember": {
                 if (!deps.profilePath) throw new ToolError("Memory is not available here.");

@@ -56,6 +56,7 @@ import {
   PermissionsSection,
   PersonaFileEditor,
   ProvidersSection,
+  SandboxSection,
 } from "./SettingsSections";
 import {
   ActivityRail,
@@ -900,8 +901,9 @@ export function App() {
           {settingsTab === "plugins" &&
             narrow(
               <>
-                <McpSection />
+                <SandboxSection />
                 <PermissionsSection />
+                <McpSection />
               </>,
             )}
           {settingsTab === "automation" &&

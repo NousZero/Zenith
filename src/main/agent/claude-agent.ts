@@ -63,6 +63,8 @@ export interface ClaudeAgentDeps {
   mcpConfigPath(): Promise<string | undefined>;
   // The user's allow/ask/deny rules, read at the start of each reply.
   permissionRules?(): PermissionRule[];
+  // Claude Code's own sandbox settings, when the user turned sandboxing on.
+  sandboxSettings?(): Promise<string | undefined>;
 }
 
 function text(value: unknown): string {
@@ -241,6 +243,7 @@ export async function* runClaudeAgent(
       !rules.some((rule) => rule.action !== "allow" && wildcardMatch(rule.tool, tool)),
   );
   const mcpConfig = await deps.mcpConfigPath();
+  const sandboxSettings = await deps.sandboxSettings?.();
   const args = [
     "-p",
     "--input-format",
@@ -262,6 +265,7 @@ export async function* runClaudeAgent(
     "--no-session-persistence",
     "--strict-mcp-config",
     ...(mcpConfig ? ["--mcp-config", mcpConfig] : []),
+    ...(sandboxSettings ? ["--settings", sandboxSettings] : []),
     ...(system ? [`--append-system-prompt=${system}`] : []),
     ...(request.model === DEFAULT_MODEL_ID ? [] : [`--model=${assertSafeModelId(request.model)}`]),
   ];

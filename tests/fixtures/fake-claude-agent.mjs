@@ -6,6 +6,9 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const out = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
+if (process.env.FAKE_CLAUDE_ARGS_FILE) {
+  writeFileSync(process.env.FAKE_CLAUDE_ARGS_FILE, JSON.stringify(process.argv.slice(2)));
+}
 const file = join(process.cwd(), "notes.txt");
 const lines = createInterface({ input: process.stdin });
 let step = "prompt";

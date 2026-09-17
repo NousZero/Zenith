@@ -4,6 +4,7 @@ import { dirname, relative, resolve } from "node:path";
 
 import { unifiedDiff } from "../../shared/diff";
 import { escapesProject, isInside, proposedContent } from "./claude-agent";
+import { sandboxedShell, type SandboxKind } from "./sandbox";
 
 const MAX_READ_LINES = 2_000;
 const MAX_FILE_BYTES = 1_000_000;
@@ -91,6 +92,11 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
       properties: {
         command: string("Command to run"),
         timeout: integer("Timeout in milliseconds, up to 600000"),
+        outside_sandbox: {
+          type: "boolean",
+          description:
+            "Set only when the sandbox blocked this command (no network, writes only in the project) and it truly needs more. The user is asked first.",
+        },
       },
       required: ["command"],
     },
@@ -302,11 +308,18 @@ export async function runWrite(projectPath: string, input: Record<string, unknow
   return `Wrote ${relative(projectPath, path) || path}.`;
 }
 
-export function runBash(
+export interface BashSandbox {
+  kind: SandboxKind;
+  // Folder the sandbox may write temporary files to.
+  tempRoot: string;
+}
+
+export async function runBash(
   projectPath: string,
   input: Record<string, unknown>,
   env: NodeJS.ProcessEnv,
   signal?: AbortSignal,
+  sandbox?: BashSandbox,
 ): Promise<string> {
   const timeout = Math.min(
     MAX_COMMAND_TIMEOUT_MS,
@@ -314,10 +327,26 @@ export function runBash(
   );
   const [shell, ...flags] =
     process.platform === "win32" ? ["cmd.exe", "/d", "/s", "/c"] : ["/bin/sh", "-c"];
-  return new Promise((resolveOutput) => {
-    const child = spawn(shell ?? "/bin/sh", [...flags, text(input["command"])], {
-      cwd: projectPath,
+  let file = shell ?? "/bin/sh";
+  let args = [...flags, text(input["command"])];
+  let childEnv = env;
+  const sandboxed = sandbox !== undefined && input["outside_sandbox"] !== true;
+  if (sandbox && sandboxed) {
+    const wrapped = await sandboxedShell(
+      sandbox.kind,
+      projectPath,
+      text(input["command"]),
+      sandbox.tempRoot,
       env,
+    );
+    file = wrapped.file;
+    args = wrapped.args;
+    childEnv = { ...env, TMPDIR: wrapped.tempDir, TMP: wrapped.tempDir, TEMP: wrapped.tempDir };
+  }
+  return new Promise((resolveOutput) => {
+    const child = spawn(file, args, {
+      cwd: projectPath,
+      env: childEnv,
       windowsHide: true,
     });
     let output = "";
@@ -337,7 +366,12 @@ export function runBash(
       clearTimeout(timer);
       signal?.removeEventListener("abort", stop);
       const status = killedBy ? `stopped (${killedBy})` : `exit code ${code ?? "unknown"}`;
-      resolveOutput(clip(`${output.trimEnd()}\n[${status}]`.trimStart()));
+      // A failure inside the sandbox may be the sandbox itself; say how to get past it.
+      const hint =
+        sandboxed && code !== 0
+          ? "\n[ran in the sandbox: no network, writes only in the project. If the sandbox blocked it, retry with outside_sandbox: true, which asks the user.]"
+          : "";
+      resolveOutput(clip(`${output.trimEnd()}\n[${status}]${hint}`.trimStart()));
     });
   });
 }
