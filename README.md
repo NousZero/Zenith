@@ -19,7 +19,10 @@ Zenith uses the sign-ins the command-line tools already have instead of asking f
 - **Command-line tools you have installed:** Claude Code, Gemini CLI, Copilot CLI — Zenith reuses
   their own sign-in, so there is no extra key to paste.
 - **Local servers:** Ollama and LM Studio, detected automatically.
-- **Agents over ACP:** Hermes Agent and OpenCode.
+- **Agents over ACP:** Hermes Agent and OpenCode, plus Goose, Codex, Cursor Agent, Kimi, Kilo,
+  Qwen Code, Auggie, Cline, Grok Build, Devin, Junie, Mistral Vibe, Amp, Factory Droid and Pi when
+  they are installed. Gemini CLI and Copilot CLI become full agents in a project folder. Zenith
+  never downloads an agent; it runs the ones already on the computer.
 - **Your own API providers:** add a name, an API type (OpenAI-compatible or Anthropic), a base
   URL, a key and optional model ids. Keys are encrypted with your operating system's secure
   storage and never shown again.
@@ -36,6 +39,9 @@ Point a conversation at a folder and the model becomes an agent that can read an
 - **Approvals first:** edits show a diff, commands show the exact command line, and MCP tools ask
   before running. Anything that reaches outside the project folder — including through a symbolic
   link — always asks.
+- **Sandboxed commands (optional):** agent commands run in the operating system's sandbox (macOS
+  Seatbelt, Linux bubblewrap) with no network and writes only inside the project, so they don't
+  need to ask. Leaving the sandbox always asks.
 - **Permission rules** decide what runs without asking: `allow Bash npm test*`, `deny Read *.env`,
   `ask Edit src/*`. An allow rule never matches a chained shell command.
 - **Undo** restores the project folder from a snapshot taken before the reply, so changes made by
@@ -54,6 +60,17 @@ Point a conversation at a folder and the model becomes an agent that can read an
   project and reach nothing else.
 - **Run inspector:** soul, role, agent, skills, project, mode, context use and the task list for
   the current conversation.
+- **What the model saw:** every part of the last request — instructions, project files, tool
+  definitions, conversation — with token counts, and a note on what a tool adds that Zenith
+  can't see.
+
+### Keep and reuse your work
+
+- **Images:** paste, drop or attach screenshots for Claude Code, API providers, Ollama and LM
+  Studio.
+- **Branch** a conversation into a new session from any message, and **export** it as Markdown or
+  a self-contained web page.
+- **Save as skill:** turn a reply that worked into a `/skill`, drafted for you to edit.
 
 ### Make it yours
 

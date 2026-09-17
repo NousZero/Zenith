@@ -50,9 +50,13 @@ are already on the computer.
 
 ### Shipped
 
-- **Connections:** Claude Code, Gemini CLI, Copilot CLI, Hermes Agent and OpenCode (ACP), Ollama,
-  LM Studio, and user-defined OpenAI-compatible or Anthropic-compatible providers with their own
-  base URL, key and model list.
+- **Connections:** Claude Code, Gemini CLI and Copilot CLI (chat, or ACP agents in a project
+  folder), Hermes Agent, OpenCode and fifteen more ACP agents when installed, Ollama, LM Studio,
+  and user-defined OpenAI-compatible or Anthropic-compatible providers with their own base URL,
+  key and model list.
+- **Transparency:** "What the model saw" shows every part of the last request with token counts.
+- **Conversation extras:** pasted images, branching into a new session, Markdown and HTML export,
+  and saving a reply as a skill.
 - **Conversation:** one pane per session, with a project folder, plan mode, compaction, retry,
   undo, session memory and named sessions.
 - **Agents:** Zenith's own tool-calling loop (`Read`, `Glob`, `Grep`, `Edit`, `Write`, `Bash`,
@@ -60,7 +64,8 @@ are already on the computer.
   MCP tools from `mcp.json`.
 - **Safety:** approval cards with diffs and command previews, permission rules
   (`allow|ask|deny <tool> [pattern]`), real-path checks so symbolic links can't leave the project,
-  Git-based snapshots and undo, and per-file checkpoints as a fallback.
+  Git-based snapshots and undo, per-file checkpoints as a fallback, and optional operating-system
+  sandboxing of agent commands (macOS Seatbelt, Linux bubblewrap).
 - **Code intelligence:** formatters after edits (Biome, Prettier, gofmt, rustfmt, Ruff) and
   language-server errors (TypeScript 7's own server, typescript-language-server, Pyright, gopls,
   rust-analyzer) fed back to the model.

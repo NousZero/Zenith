@@ -28,20 +28,24 @@ export function usesDefaultModel(kind: ConnectionKind): boolean {
   return kind === "cli" || kind === "agent";
 }
 
-// Names of providers the user added, learned from the connection list.
-const connectionLabels = new Map<string, string>();
+// Names and kinds of connections Zenith doesn't list above (user-added providers, extra agents),
+// learned from the connection list.
+const connectionInfo = new Map<string, { label: string; kind: ConnectionKind }>();
 
 export function rememberConnectionLabels(connections: ConnectionStatus[]): void {
-  for (const connection of connections) connectionLabels.set(connection.id, connection.label);
+  for (const connection of connections) {
+    connectionInfo.set(connection.id, { label: connection.label, kind: connection.kind });
+  }
 }
 
 export function providerMeta(id: string): ProviderMeta {
+  const known = connectionInfo.get(id);
   return (
     PROVIDERS.find((provider) => provider.id === id) ?? {
       id,
-      label: connectionLabels.get(id) ?? id,
-      kind: "api-key",
-      dotClass: "bg-muted-foreground",
+      label: known?.label ?? id,
+      kind: known?.kind ?? "api-key",
+      dotClass: known?.kind === "agent" ? "bg-primary" : "bg-muted-foreground",
     }
   );
 }

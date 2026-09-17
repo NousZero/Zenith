@@ -58,6 +58,7 @@ import {
 } from "./cli/resolve-executable";
 import {
   AGENTS,
+  CLI_AGENT_ARGS,
   apiKeyConnections,
   CLI_BINARIES,
   detectToolConnections,
@@ -95,14 +96,15 @@ import type {
 
 const DETECTION_COMMAND_TIMEOUT_MS = 10_000;
 
-// Connections that act on a project folder; Gemini CLI and Copilot CLI only chat. Providers the
-// user adds ("custom:…") run Zenith's own agent and act on folders too.
+// Connections that act on a project folder. Providers the user adds ("custom:…") run Zenith's
+// own agent and act on folders too.
 const actsOnProject = (providerId: string) =>
   PROJECT_CONNECTIONS.has(providerId) || providerId.startsWith("custom:");
 const PROJECT_CONNECTIONS = new Set([
   "claude-code",
-  "hermes",
-  "opencode",
+  "gemini-cli",
+  "copilot-cli",
+  ...AGENTS.map((agent) => agent.id),
   "ollama",
   "lmstudio",
   "openai",
@@ -318,11 +320,13 @@ export function registerIpcHandlers(options: {
     return secret;
   };
 
-  const cliDeps = (connectionId: keyof typeof CLI_BINARIES) => ({
-    resolveBinary: () => resolveBinary(CLI_BINARIES[connectionId]),
+  const binaryDeps = (command: string) => ({
+    resolveBinary: () => resolveBinary(command),
     childEnv,
     cwd: cliSandbox,
   });
+  const cliDeps = (connectionId: keyof typeof CLI_BINARIES) =>
+    binaryDeps(CLI_BINARIES[connectionId]);
 
   // OpenCode's own rules may allow edits and shell commands silently; inside Zenith they ask.
   const openCodePermissions = JSON.stringify({
@@ -381,17 +385,35 @@ export function registerIpcHandlers(options: {
         : claudeCodeChat.sendMessage(request),
   };
 
+  const acpDeps = (command: string) => ({
+    ...binaryDeps(command),
+    clientVersion: app.getVersion(),
+    mcpServers: mcp.acpServers,
+  });
   const agentAdapters = AGENTS.map((agent) =>
     createAcpAdapter(
       {
         id: agent.id,
         label: agent.label,
-        args: ["acp"],
+        args: [...agent.args],
         ...(agent.id === "opencode" ? { env: { OPENCODE_PERMISSION: openCodePermissions } } : {}),
       },
-      { ...cliDeps(agent.id), clientVersion: app.getVersion(), mcpServers: mcp.acpServers },
+      acpDeps(agent.command),
     ),
   );
+  // Gemini CLI and Copilot CLI chat read-only, and work as ACP agents in a project folder.
+  const cliAgent = (chat: ProviderAdapter, id: keyof typeof CLI_AGENT_ARGS, label: string) => {
+    const agent = createAcpAdapter(
+      { id, label, args: [...CLI_AGENT_ARGS[id]] },
+      acpDeps(CLI_BINARIES[id]),
+    );
+    agentAdapters.push(agent);
+    return {
+      ...chat,
+      sendMessage: (request: SendMessageRequest) =>
+        request.projectPath ? agent.sendMessage(request) : chat.sendMessage(request),
+    };
+  };
 
   // User-defined providers, rebuilt whenever the list changes.
   let customAdapters = new Map<string, ProviderAdapter>();
@@ -409,8 +431,12 @@ export function registerIpcHandlers(options: {
   const registry = createProviderRegistry(
     [
       claudeCode,
-      createCliAdapter(geminiCliSpec, cliDeps("gemini-cli")),
-      createCliAdapter(copilotCliSpec, cliDeps("copilot-cli")),
+      cliAgent(createCliAdapter(geminiCliSpec, cliDeps("gemini-cli")), "gemini-cli", "Gemini CLI"),
+      cliAgent(
+        createCliAdapter(copilotCliSpec, cliDeps("copilot-cli")),
+        "copilot-cli",
+        "Copilot CLI",
+      ),
       ...agentAdapters,
       ...LOCAL_SERVERS.map((server) =>
         withNativeAgent(

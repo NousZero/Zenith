@@ -39,7 +39,7 @@ const SOURCE_LABELS: Record<LibraryItem["source"], string> = {
   hermes: "Hermes",
 };
 
-interface Draft {
+export interface LibraryDraft {
   previousPath?: string;
   name: string;
   description: string;
@@ -49,13 +49,14 @@ interface Draft {
 
 function Editor(props: {
   kind: LibraryKind;
-  draft: Draft;
+  draft: LibraryDraft;
   onCancel(): void;
   onSaved(path: string): void;
 }) {
   const [draft, setDraft] = useState(props.draft);
   const [error, setError] = useState("");
-  const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
+  const update = (patch: Partial<LibraryDraft>) =>
+    setDraft((current) => ({ ...current, ...patch }));
 
   async function save() {
     try {
@@ -156,12 +157,14 @@ export function LibraryBrowser(props: {
   onChanged(): void;
   pickForPaneId?: string;
   onPickAgent?(paneId: string, agentPath: string | null): void;
+  // Opens the editor with this draft, for example a skill made from a conversation.
+  initialDraft?: LibraryDraft;
 }) {
   const { kind } = props;
   const [query, setQuery] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ path: string; body: string } | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<LibraryDraft | null>(props.initialDraft ?? null);
 
   const needle = query.trim().toLowerCase();
   const visible = props.items.filter(

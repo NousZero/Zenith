@@ -46,7 +46,7 @@ The user and the user's operating-system account are trusted. Code already runni
 
 - **A compromised renderer can do what the user can do in Zenith:** run terminal commands, edit `mcp.json`, and approve prompts. The controls above aim to keep the renderer uncompromised rather than to limit it afterwards.
 - **Approved commands and MCP servers run with full user authority.** Undo restores the project folder only, not changes a command makes elsewhere, and approval cards say so.
-- **Hermes Agent and OpenCode enforce their own permissions.** Zenith's permission rules and outside-path checks don't apply to them, because their tool names and paths differ.
+- **ACP agents enforce their own permissions.** Hermes Agent, OpenCode, Gemini CLI and Copilot CLI in agent mode, and the other ACP agents Zenith can run ask through Zenith when they choose to; Zenith's permission rules, outside-path checks, and sandbox don't apply inside them. Zenith only starts agents already installed, with launch arguments taken from the official ACP registry, and never downloads one.
 - **Claude Code's own reading tools** (Read, Glob, Grep) run without asking inside the folder Claude Code decides is the project, unless a rule names them.
 - **History and profile files are not encrypted at rest.**
 - **The packaged app accepts Chromium's `--remote-debugging-port` switch.** Only a local process running as the same user could use it.

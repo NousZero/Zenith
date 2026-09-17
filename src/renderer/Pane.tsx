@@ -88,7 +88,19 @@ function providerGroups(connections: ConnectionStatus[], currentId: string) {
       label: "On this computer",
       providers: PROVIDERS.filter((p) => p.kind === "cli" || p.kind === "local"),
     },
-    { label: "Agents", providers: PROVIDERS.filter((p) => p.kind === "agent") },
+    {
+      label: "Agents",
+      providers: [
+        ...PROVIDERS.filter((p) => p.kind === "agent"),
+        // Other ACP agents installed on this computer.
+        ...connections
+          .filter(
+            (connection) =>
+              connection.kind === "agent" && !PROVIDERS.some((p) => p.id === connection.id),
+          )
+          .map((connection) => providerMeta(connection.id)),
+      ],
+    },
     { label: "API providers", providers: [...apiIds].map((id) => providerMeta(id)) },
   ].filter((group) => group.providers.length > 0);
 }
@@ -155,10 +167,14 @@ function MessageActions(props: {
   onRetry(): void;
   onUndo(): void;
   onRemember(): void;
+  onSaveSkill?(): void;
 }) {
   const actions = [
     { label: "Copy", icon: Copy, run: () => void navigator.clipboard.writeText(props.content) },
     { label: "Remember…", icon: Brain, run: props.onRemember },
+    ...(props.onSaveSkill
+      ? [{ label: "Save as skill…", icon: Sparkles, run: props.onSaveSkill }]
+      : []),
     ...(props.onBranch
       ? [
           {
@@ -262,6 +278,7 @@ export function Pane(props: {
   onChooseAgent(): void;
   onBuildPlan(): void;
   onRemember(text: string): void;
+  onSaveSkill?(messageId: string): void;
   compacting: boolean;
   onCompact(): void;
   permissions: PermissionRequest[];
@@ -317,8 +334,6 @@ export function Pane(props: {
   const lastAssistant = [...pane.messages].reverse().find((m) => m.role === "assistant");
   const awaitingReply = streaming && lastMessage?.role === "user";
   const hasPrompt = pane.messages.some((message) => message.role === "user");
-  // Gemini CLI and Copilot CLI stay chat-only; every other connection can work in a folder.
-  const supportsProject = pane.providerId === "claude-code" || provider.kind !== "cli";
 
   async function chooseProject() {
     const folder = await window.zenith.projects.choose();
@@ -518,7 +533,8 @@ export function Pane(props: {
           </>
         )}
 
-        {!editingName && (pane.projectPath || supportsProject) && (
+        {/* Every connection can work in a folder; the CLIs switch to their agent mode there. */}
+        {!editingName && (
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -548,9 +564,7 @@ export function Pane(props: {
               </TooltipTrigger>
               <TooltipContent>
                 {pane.projectPath
-                  ? supportsProject
-                    ? `Agent works in ${pane.projectPath}`
-                    : `${provider.label} can't use project folders`
+                  ? `Agent works in ${pane.projectPath}`
                   : "Work in a project folder: the agent can read, edit, and run commands there, asking you first"}
               </TooltipContent>
             </Tooltip>
@@ -796,6 +810,9 @@ export function Pane(props: {
                       onRetry={onRetry}
                       onUndo={props.onUndo}
                       onRemember={() => props.onRemember(message.content)}
+                      {...(props.onSaveSkill
+                        ? { onSaveSkill: () => props.onSaveSkill?.(message.id) }
+                        : {})}
                     />
                   )}
                 </div>

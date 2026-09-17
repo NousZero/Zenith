@@ -42,7 +42,12 @@ import { Button } from "./components/ui/button";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Composer, COMPOSER_INPUT_ID } from "./Composer";
 import { HistoryDialog, type AskTarget, type HistoryTab } from "./HistoryDialog";
-import { LibraryBrowser, LibraryDialog, type LibraryDialogState } from "./LibraryDialog";
+import {
+  LibraryBrowser,
+  LibraryDialog,
+  type LibraryDialogState,
+  type LibraryDraft,
+} from "./LibraryDialog";
 import { EmptyState } from "./EmptyState";
 import { FilesView } from "./FilesView";
 import { formatTokens } from "./lib/format";
@@ -160,6 +165,10 @@ export function App() {
   const [rememberText, setRememberText] = useState<string | null>(null);
   const [cliOutput, setCliOutput] = useState<CliOutput | null>(null);
   const [contextPaneId, setContextPaneId] = useState<string | null>(null);
+  // A skill drafted from a conversation, opened in Settings → Skills; the number remounts the editor.
+  const [skillDraft, setSkillDraft] = useState<{ draft: LibraryDraft; version: number } | null>(
+    null,
+  );
 
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [libraryState, setLibraryState] = useState<LibraryDialogState | null>(null);
@@ -429,6 +438,43 @@ export function App() {
     } catch (error: unknown) {
       console.error("Export failed:", error);
     }
+  }
+
+  // Drafts a skill from the request that led to a reply and the reply itself.
+  function saveAsSkill(messageId: string) {
+    const messages = session.panes[0]?.messages ?? [];
+    const index = messages.findIndex((message) => message.id === messageId);
+    const reply = messages[index];
+    if (!reply) return;
+    const request = messages
+      .slice(0, index)
+      .findLast((message) => message.role === "user")?.content;
+    const name =
+      session.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "new-skill";
+    setSkillDraft({
+      version: Date.now(),
+      draft: {
+        name,
+        description: (request ?? session.name).replace(/\s+/g, " ").slice(0, 140),
+        tools: "",
+        body: [
+          `Use this skill when the user asks for something like: ${request ?? session.name}`,
+          "",
+          "## What worked before",
+          "",
+          reply.content,
+          "",
+          "## Steps",
+          "",
+          "1. Edit these steps into a short, repeatable procedure before saving.",
+        ].join("\n"),
+      },
+    });
+    openSettings("skills");
   }
 
   // Starts a new session holding this conversation up to and including one message.
@@ -742,6 +788,7 @@ export function App() {
             onRetry={() => retryPane(pane.id)}
             onUndo={() => undoPane(pane.id)}
             onBranch={branchToSession}
+            onSaveSkill={saveAsSkill}
             onExport={(kind) => void exportSession(kind)}
             onShowContext={() => setContextPaneId(pane.id)}
             onStop={() => abortPane(pane.id)}
@@ -854,10 +901,14 @@ export function App() {
       {libraryKind ? (
         <div className="flex min-h-0 flex-1 flex-col p-5">
           <LibraryBrowser
-            key={libraryKind}
+            key={`${libraryKind}:${libraryKind === "skill" ? (skillDraft?.version ?? 0) : 0}`}
             kind={libraryKind}
             items={library}
-            onChanged={refreshLibrary}
+            onChanged={() => {
+              setSkillDraft(null);
+              refreshLibrary();
+            }}
+            {...(libraryKind === "skill" && skillDraft ? { initialDraft: skillDraft.draft } : {})}
           />
         </div>
       ) : (

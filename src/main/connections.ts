@@ -43,10 +43,46 @@ export const CLI_BINARIES = {
   opencode: "opencode",
 } as const;
 
-export const AGENTS = [
-  { id: "hermes", label: "Hermes Agent" },
-  { id: "opencode", label: "OpenCode" },
-] as const;
+export interface AgentDefinition {
+  id: string;
+  label: string;
+  // Executable looked up on the PATH, and the arguments that start its ACP server.
+  command: string;
+  args: readonly string[];
+  // Listed even when missing, so people can find out how to get it.
+  alwaysListed?: boolean;
+}
+
+// Coding agents that speak the Agent Client Protocol. Launch commands follow the official ACP
+// registry (cdn.agentclientprotocol.com). Zenith runs only programs already installed on this
+// computer; it never downloads or installs an agent.
+export const AGENTS: readonly AgentDefinition[] = [
+  { id: "hermes", label: "Hermes Agent", command: "hermes", args: ["acp"], alwaysListed: true },
+  { id: "opencode", label: "OpenCode", command: "opencode", args: ["acp"], alwaysListed: true },
+  { id: "goose", label: "Goose", command: "goose", args: ["acp"] },
+  { id: "codex", label: "Codex", command: "codex-acp", args: [] },
+  { id: "cursor", label: "Cursor Agent", command: "cursor-agent", args: ["acp"] },
+  { id: "kimi", label: "Kimi CLI", command: "kimi", args: ["acp"] },
+  { id: "kilo", label: "Kilo", command: "kilo", args: ["acp"] },
+  { id: "qwen-code", label: "Qwen Code", command: "qwen", args: ["--acp"] },
+  { id: "auggie", label: "Auggie", command: "auggie", args: ["--acp"] },
+  { id: "cline", label: "Cline", command: "cline", args: ["--acp"] },
+  { id: "grok", label: "Grok Build", command: "grok", args: ["agent", "stdio"] },
+  { id: "devin", label: "Devin", command: "devin", args: ["acp"] },
+  { id: "junie", label: "Junie", command: "junie", args: ["--acp=true"] },
+  { id: "mistral-vibe", label: "Mistral Vibe", command: "vibe-acp", args: [] },
+  { id: "amp", label: "Amp", command: "amp-acp", args: [] },
+  {
+    id: "droid",
+    label: "Factory Droid",
+    command: "droid",
+    args: ["exec", "--output-format", "acp-daemon"],
+  },
+  { id: "pi", label: "Pi", command: "pi-acp", args: [] },
+];
+
+// Gemini CLI and Copilot CLI chat as CLIs, and become ACP agents in a project folder.
+export const CLI_AGENT_ARGS = { "gemini-cli": ["--acp"], "copilot-cli": ["--acp"] } as const;
 
 function versionOf(output: string): string {
   return /\d+\.\d+\.\d+/.exec(output)?.[0] ?? "";
@@ -130,12 +166,19 @@ async function detectCopilotCli(probes: ConnectionProbes): Promise<ConnectionSta
 // Agents are full coding agents with their own tools; sign-in problems surface when you send.
 async function detectAgent(
   probes: ConnectionProbes,
-  agent: (typeof AGENTS)[number],
-): Promise<ConnectionStatus> {
+  agent: AgentDefinition,
+): Promise<ConnectionStatus | undefined> {
   const base = { id: agent.id, label: agent.label, kind: "agent" as const };
-  const binary = await probes.resolveBinary(CLI_BINARIES[agent.id]);
-  if (!binary) return { ...base, state: "not-installed", detail: "Not installed" };
-  const version = await probes.runCommand(binary, ["--version"]);
+  const binary = await probes.resolveBinary(agent.command);
+  if (!binary) {
+    return agent.alwaysListed
+      ? { ...base, state: "not-installed", detail: "Not installed" }
+      : undefined;
+  }
+  // Only well-known agents are asked for a version; others might start a session on an unknown flag.
+  const version = agent.alwaysListed
+    ? await probes.runCommand(binary, ["--version"])
+    : { stdout: "" };
   const name = withVersion(agent.label, versionOf(version.stdout));
   return {
     ...base,
@@ -164,7 +207,7 @@ export async function detectToolConnections(probes: ConnectionProbes): Promise<C
     Promise.all(AGENTS.map((agent) => detectAgent(probes, agent))),
     Promise.all(LOCAL_SERVERS.map((server) => detectLocalServer(probes, server))),
   ]);
-  return [...cli, ...agents, ...local];
+  return [...cli, ...agents.filter((agent) => agent !== undefined), ...local];
 }
 
 export function apiKeyConnections(savedCredentialIds: string[]): ConnectionStatus[] {

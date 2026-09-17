@@ -31,6 +31,31 @@ function byId(statuses: Awaited<ReturnType<typeof detectToolConnections>>, id: s
 }
 
 describe("detectToolConnections", () => {
+  it("lists extra ACP agents only when installed, without starting them", async () => {
+    const asked: string[] = [];
+    const statuses = await detectToolConnections(
+      probes({
+        resolveBinary: async (name) =>
+          ["goose", "codex-acp", "hermes", "claude"].includes(name) ? `/bin/${name}` : undefined,
+        runCommand: async (binary, args) => {
+          asked.push(binary);
+          return { stdout: args[0] === "auth" ? '{"loggedIn": true}' : "1.2.3", exitCode: 0 };
+        },
+      }),
+    );
+    const agents = statuses.filter((status) => status.kind === "agent");
+    expect(agents.map((agent) => [agent.id, agent.state])).toEqual([
+      ["hermes", "ready"],
+      ["opencode", "not-installed"],
+      ["goose", "ready"],
+      ["codex", "ready"],
+    ]);
+    // Only the always-listed agents are asked for a version.
+    expect(asked).not.toContain("/bin/goose");
+    expect(asked).not.toContain("/bin/codex-acp");
+    expect(byId(statuses, "goose").detail).toContain("Goose ·");
+  });
+
   it("reports installed, signed-in tools and running servers as ready", async () => {
     const statuses = await detectToolConnections(probes({ env: { GEMINI_API_KEY: "set" } }));
     expect(byId(statuses, "claude-code")).toMatchObject({
