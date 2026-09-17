@@ -52,3 +52,6 @@ diagnostics-*.json
 
 # Local git worktrees (superpowers:using-git-worktrees)
 .worktrees/
+
+# Evidence from the retired workbench, kept locally only.
+tasks/

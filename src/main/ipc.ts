@@ -35,6 +35,7 @@ import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createPtyTerminals } from "./pty-terminal";
+import { describeContext } from "./context-snapshot";
 import { createCustomProviderStore, customAdapter, customModel } from "./custom-providers";
 import type { CustomProviderInput } from "../shared/custom-providers";
 import { createScheduler } from "./scheduler";
@@ -75,6 +76,7 @@ import type {
   BoardStatus,
   ChatMessage,
   ConnectionStatus,
+  ContextSnapshot,
   PersonaFile,
   ProviderAdapter,
   SendMessageRequest,
@@ -85,7 +87,10 @@ import type {
 
 const DETECTION_COMMAND_TIMEOUT_MS = 10_000;
 
-// Connections that act on a project folder; Gemini CLI and Copilot CLI only chat.
+// Connections that act on a project folder; Gemini CLI and Copilot CLI only chat. Providers the
+// user adds ("custom:…") run Zenith's own agent and act on folders too.
+const actsOnProject = (providerId: string) =>
+  PROJECT_CONNECTIONS.has(providerId) || providerId.startsWith("custom:");
 const PROJECT_CONNECTIONS = new Set([
   "claude-code",
   "hermes",
@@ -436,6 +441,12 @@ export function registerIpcHandlers(options: {
   });
 
   const activeRequests = new Map<string, AbortController>();
+  // The last request's context for each pane, shown by the context inspector.
+  const contextSnapshots = new Map<string, ContextSnapshot>();
+  handle(
+    "chat:context",
+    async (_event, paneId: unknown) => contextSnapshots.get(String(paneId)) ?? null,
+  );
   const pendingPermissions = new Map<string, (optionId: string | undefined) => void>();
 
   handle(
@@ -493,6 +504,32 @@ export function registerIpcHandlers(options: {
   handle("persona:get", async (_event, file: unknown) =>
     readFile(personaPath(file), "utf8").catch(() => ""),
   );
+  // Writes text the window prepared to a file the user chooses in the system save dialog.
+  handle(
+    "files:saveAs",
+    async (event, payload: { suggestedName: unknown; content: unknown; kind: unknown }) => {
+      const kind = payload.kind === "html" ? "html" : "markdown";
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const saveOptions = {
+        title: "Export conversation",
+        defaultPath: options.join(
+          app.getPath("documents"),
+          String(payload.suggestedName ?? "conversation").replace(/[\\/:*?"<>|]/g, "-"),
+        ),
+        filters:
+          kind === "html"
+            ? [{ name: "Web page", extensions: ["html"] }]
+            : [{ name: "Markdown", extensions: ["md"] }],
+      };
+      const result = window
+        ? await dialog.showSaveDialog(window, saveOptions)
+        : await dialog.showSaveDialog(saveOptions);
+      if (result.canceled || !result.filePath) return null;
+      await writeFile(result.filePath, String(payload.content ?? ""), "utf8");
+      return result.filePath;
+    },
+  );
+
   handle("persona:set", async (_event, payload: { file: unknown; text: unknown }) => {
     if (typeof payload.text !== "string") throw new TypeError("Persona text must be a string.");
     await writeFile(personaPath(payload.file), payload.text, "utf8");
@@ -747,6 +784,17 @@ export function registerIpcHandlers(options: {
       try {
         const projectPath = await validProjectPath(payload.projectPath);
         const adapter = registry.get(payload.providerId);
+        // Recorded for the context inspector; a failure here never blocks the reply.
+        void describeContext({
+          providerId: payload.providerId,
+          modelId: payload.modelId,
+          messages: payload.messages,
+          projectPath,
+          planMode: payload.planMode === true,
+          allowedTools: Array.isArray(payload.allowedTools) ? payload.allowedTools : undefined,
+        })
+          .then((snapshot) => contextSnapshots.set(payload.paneId, snapshot))
+          .catch(() => undefined);
         const requestPermission = (prompt: PermissionPrompt) =>
           new Promise<string | undefined>((resolve) => {
             if (controller.signal.aborted || event.sender.isDestroyed()) return resolve(undefined);
@@ -771,11 +819,7 @@ export function registerIpcHandlers(options: {
             event.sender.send("chat:permission", request);
           });
         // Snapshot before any agent that can change files starts; plan mode changes nothing.
-        if (
-          projectPath &&
-          payload.planMode !== true &&
-          PROJECT_CONNECTIONS.has(payload.providerId)
-        ) {
+        if (projectPath && payload.planMode !== true && actsOnProject(payload.providerId)) {
           if (await snapshots.take(payload.requestId, projectPath)) {
             event.sender.send("chat:chunk", {
               requestId: payload.requestId,

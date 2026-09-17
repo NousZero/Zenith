@@ -14,6 +14,17 @@ export interface PaneMessage extends ChatMessage {
   id: string;
 }
 
+// What one request carried to the model, for the context inspector.
+export interface ContextSnapshot {
+  at: number;
+  providerId: string;
+  modelId: string;
+  sections: { label: string; text: string; tokens: number }[];
+  totalTokens: number;
+  // Parts the connection adds itself, which Zenith can't see.
+  note?: string;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -276,6 +287,14 @@ export interface ZenithApi {
   providers: {
     listModels(providerId: string): Promise<Model[]>;
   };
+  files: {
+    // Opens the system save dialog and writes the text there; null when the user cancels.
+    saveAs(input: {
+      suggestedName: string;
+      content: string;
+      kind: "markdown" | "html";
+    }): Promise<string | null>;
+  };
   cli: {
     // Runs one of Claude Code's read-only commands ("/usage", "/cost", "/model", "/doctor")
     // and returns what it printed.
@@ -419,6 +438,7 @@ export interface ZenithApi {
       modelId: string;
       messages: ChatMessage[];
     }): Promise<string>;
+    context(paneId: string): Promise<ContextSnapshot | null>;
     respondPermission(permissionId: string, optionId: string | null): Promise<void>;
     onPermission(listener: (request: PermissionRequest) => void): () => void;
     onChunk(

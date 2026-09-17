@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   Eraser,
+  FileDown,
   FolderOpen,
   FolderTree,
   KanbanSquare,
@@ -17,6 +18,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  ScanEye,
   Server,
   ShieldAlert,
   Shrink,
@@ -148,6 +150,7 @@ function MessageActions(props: {
   content: string;
   isLast: boolean;
   onBranch?(): void;
+  branchLabel?: string;
   onRetry(): void;
   onUndo(): void;
   onRemember(): void;
@@ -156,7 +159,13 @@ function MessageActions(props: {
     { label: "Copy", icon: Copy, run: () => void navigator.clipboard.writeText(props.content) },
     { label: "Remember…", icon: Brain, run: props.onRemember },
     ...(props.onBranch
-      ? [{ label: "Branch into new pane", icon: GitBranch, run: props.onBranch }]
+      ? [
+          {
+            label: props.branchLabel ?? "Branch into new pane",
+            icon: GitBranch,
+            run: props.onBranch,
+          },
+        ]
       : []),
     ...(props.isLast
       ? [
@@ -260,6 +269,8 @@ export function Pane(props: {
   onRemove(): void;
   // Multiple panes are on hold: one pane per session hides broadcast, branching, and removal.
   singlePane?: boolean;
+  onExport?(kind: "markdown" | "html"): void;
+  onShowContext?(): void;
   onSend(prompt: string): void;
   onRetry(): void;
   onUndo(): void;
@@ -643,6 +654,30 @@ export function Pane(props: {
               <Undo2 />
               Undo last exchange
             </DropdownMenuItem>
+            {props.onShowContext && (
+              <DropdownMenuItem onSelect={props.onShowContext}>
+                <ScanEye />
+                What the model saw
+              </DropdownMenuItem>
+            )}
+            {props.onExport && (
+              <>
+                <DropdownMenuItem
+                  disabled={pane.messages.length === 0}
+                  onSelect={() => props.onExport?.("markdown")}
+                >
+                  <FileDown />
+                  Export as Markdown…
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={pane.messages.length === 0}
+                  onSelect={() => props.onExport?.("html")}
+                >
+                  <FileDown />
+                  Export as web page…
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuItem disabled={!canCompact} onSelect={props.onCompact}>
               <Shrink />
               Compact conversation
@@ -742,7 +777,10 @@ export function Pane(props: {
                     <MessageActions
                       content={message.content}
                       isLast={index === pane.messages.length - 1}
-                      {...(props.singlePane ? {} : { onBranch: () => props.onBranch(message.id) })}
+                      onBranch={() => props.onBranch(message.id)}
+                      branchLabel={
+                        props.singlePane ? "Branch into new session" : "Branch into new pane"
+                      }
                       onRetry={onRetry}
                       onUndo={props.onUndo}
                       onRemember={() => props.onRemember(message.content)}

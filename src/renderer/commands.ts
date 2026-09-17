@@ -34,6 +34,8 @@ export const BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set([
   "cost",
   "model",
   "doctor",
+  "context",
+  "export",
 ]);
 
 export function parseSlashCommand(text: string): { name: string; argument: string } | undefined {

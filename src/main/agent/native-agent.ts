@@ -54,7 +54,7 @@ export interface NativeAgentDeps {
   extraTools?(projectPath: string): Promise<ExtraTools>;
 }
 
-function agentPrompt(projectPath: string, subagent: boolean): string {
+export function agentPrompt(projectPath: string, subagent: boolean): string {
   return [
     subagent
       ? "You are a subagent of Zenith's coding agent. Finish the delegated task and reply with a concise report of what you found or changed."

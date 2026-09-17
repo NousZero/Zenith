@@ -366,6 +366,7 @@ export function RunInspector(props: {
   commandCount: number;
   connections: ConnectionStatus[];
   onOpenSettings(): void;
+  onShowContext(): void;
 }) {
   const { pane } = props;
   const state = props.pendingCount > 0 ? "AWAITING APPROVAL" : props.streaming ? "RUNNING" : "IDLE";
@@ -396,6 +397,17 @@ export function RunInspector(props: {
         >
           {state}
         </span>
+      </div>
+
+      <div className="mx-4 mt-3">
+        <button
+          type="button"
+          onClick={props.onShowContext}
+          disabled={!pane}
+          className="w-full cursor-pointer border border-border px-3 py-1.5 text-left font-mono text-[10px] tracking-[0.09em] text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          WHAT THE MODEL SAW →
+        </button>
       </div>
 
       <section className="m-4 flex items-center gap-3 border border-primary/20 bg-popover p-3.5">

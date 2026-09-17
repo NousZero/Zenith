@@ -9,6 +9,7 @@ import {
   Bot,
   CalendarClock,
   FileText,
+  FileDown,
   FolderTree,
   Gauge,
   Library as LibraryIcon,
@@ -16,6 +17,7 @@ import {
   MessageCircleQuestion,
   MessageSquare,
   Search,
+  ScanEye,
   Settings,
   Shrink,
   Stethoscope,
@@ -33,6 +35,8 @@ import { ScheduleDialog } from "./ScheduleDialog";
 import { BotsDialog } from "./BotsDialog";
 import { CliOutputDialog, type CliOutput } from "./CliOutputDialog";
 import { CommandPalette } from "./CommandPalette";
+import { ContextDialog } from "./ContextDialog";
+import { sessionToHtml, sessionToMarkdown } from "./exportSession";
 import { BUILTIN_COMMAND_NAMES, type Command } from "./commands";
 import { Button } from "./components/ui/button";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -154,6 +158,7 @@ export function App() {
   );
   const [rememberText, setRememberText] = useState<string | null>(null);
   const [cliOutput, setCliOutput] = useState<CliOutput | null>(null);
+  const [contextPaneId, setContextPaneId] = useState<string | null>(null);
 
   const [library, setLibrary] = useState<LibraryItem[]>([]);
   const [libraryState, setLibraryState] = useState<LibraryDialogState | null>(null);
@@ -413,7 +418,62 @@ export function App() {
       );
   }
 
+  async function exportSession(kind: "markdown" | "html") {
+    try {
+      await window.zenith.files.saveAs({
+        suggestedName: `${session.name || UNTITLED_SESSION}.${kind === "html" ? "html" : "md"}`,
+        content: kind === "html" ? sessionToHtml(session) : sessionToMarkdown(session),
+        kind,
+      });
+    } catch (error: unknown) {
+      console.error("Export failed:", error);
+    }
+  }
+
+  // Starts a new session holding this conversation up to and including one message.
+  function branchToSession(messageId: string) {
+    const source = session.panes[0];
+    if (!source) return;
+    const index = source.messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    flushPendingSave();
+    const id = crypto.randomUUID();
+    const messages = source.messages.slice(0, index + 1);
+    setSessionId(id);
+    setSession({
+      ...session,
+      id,
+      name: `${session.name} (branch)`,
+      updatedAt: Date.now(),
+      panes: [
+        {
+          ...source,
+          id: crypto.randomUUID(),
+          messages,
+          promptTokens: 0,
+          completionTokens: 0,
+          lastError: null,
+        },
+      ],
+    });
+    setActivity("workspace");
+  }
+
   const builtinCommands: Command[] = [
+    {
+      name: "context",
+      title: "Show what the model saw in the last request",
+      icon: ScanEye,
+      run: () => pane && setContextPaneId(pane.id),
+    },
+    {
+      name: "export",
+      title: "Export this conversation",
+      icon: FileDown,
+      argument: "markdown | html",
+      run: (value) =>
+        void exportSession(value.trim().toLowerCase() === "html" ? "html" : "markdown"),
+    },
     {
       name: "usage",
       title: "Claude Code: subscription usage and limits",
@@ -680,7 +740,9 @@ export function App() {
             onSend={(prompt) => sendToPane(pane, prompt)}
             onRetry={() => retryPane(pane.id)}
             onUndo={() => undoPane(pane.id)}
-            onBranch={() => undefined}
+            onBranch={branchToSession}
+            onExport={(kind) => void exportSession(kind)}
+            onShowContext={() => setContextPaneId(pane.id)}
             onStop={() => abortPane(pane.id)}
             onOpenSettings={() => openSettings("providers")}
           />
@@ -915,6 +977,7 @@ export function App() {
               commandCount={library.filter((item) => item.kind === "command").length}
               connections={connections}
               onOpenSettings={() => openSettings("providers")}
+              onShowContext={() => pane && setContextPaneId(pane.id)}
             />
           }
         />
@@ -1001,6 +1064,7 @@ export function App() {
           onPickAgent={(paneId, agentPath) => updatePane(paneId, { agentPath })}
         />
         <CliOutputDialog output={cliOutput} onClose={() => setCliOutput(null)} />
+        <ContextDialog paneId={contextPaneId} onClose={() => setContextPaneId(null)} />
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
       </div>
     </TooltipProvider>

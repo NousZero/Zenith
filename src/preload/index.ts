@@ -13,6 +13,7 @@ import type {
   WorkspaceFile,
   ChatMessage,
   ConnectionStatus,
+  ContextSnapshot,
   HistoryExcerpt,
   PermissionRequest,
   ScheduledTask,
@@ -30,6 +31,13 @@ const zenithApi: ZenithApi = {
   connections: {
     list: (refresh?: boolean): Promise<ConnectionStatus[]> =>
       ipcRenderer.invoke("connections:list", refresh === true),
+  },
+  files: {
+    saveAs: (input: {
+      suggestedName: string;
+      content: string;
+      kind: "markdown" | "html";
+    }): Promise<string | null> => ipcRenderer.invoke("files:saveAs", input),
   },
   cli: {
     claudeCommand: (name: string): Promise<string> => ipcRenderer.invoke("cli:claudeCommand", name),
@@ -213,6 +221,9 @@ const zenithApi: ZenithApi = {
       modelId: string;
       messages: ChatMessage[];
     }): Promise<string> => ipcRenderer.invoke("chat:complete", request),
+    // What the pane's last request carried to the model, or null before the first one.
+    context: (paneId: string): Promise<ContextSnapshot | null> =>
+      ipcRenderer.invoke("chat:context", paneId),
     respondPermission: (permissionId: string, optionId: string | null): Promise<void> =>
       ipcRenderer.invoke("chat:respondPermission", { permissionId, optionId }),
     onPermission(listener: (request: PermissionRequest) => void): () => void {
