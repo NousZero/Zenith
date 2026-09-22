@@ -51,6 +51,7 @@ import {
 } from "./LibraryDialog";
 import { EmptyState } from "./EmptyState";
 import { FilesView } from "./FilesView";
+import { GoalsView } from "./GoalsView";
 import { formatTokens } from "./lib/format";
 import { MemoryPopover } from "./MemoryPopover";
 import { Pane } from "./Pane";
@@ -1073,7 +1074,9 @@ export function App() {
               ? ["Workspace", session.name || UNTITLED_SESSION]
               : activity === "files"
                 ? ["Files", folderLabel(dockProjectPath ?? "")]
-                : ["Settings", SETTINGS_TABS.find((tab) => tab.id === settingsTab)?.label ?? ""]
+                : activity === "goals"
+                  ? ["Goals"]
+                  : ["Settings", SETTINGS_TABS.find((tab) => tab.id === settingsTab)?.label ?? ""]
           }
           connectedCount={readyToolCount}
           streaming={streamingPaneIds.size > 0}
@@ -1115,11 +1118,15 @@ export function App() {
         />
 
         <main className="workbench-grid flex min-h-0 min-w-0 flex-col">
-          {activity === "workspace"
-            ? workspaceView
-            : activity === "files"
-              ? filesView
-              : settingsView}
+          {activity === "workspace" ? (
+            workspaceView
+          ) : activity === "files" ? (
+            filesView
+          ) : activity === "goals" ? (
+            <GoalsView />
+          ) : (
+            settingsView
+          )}
         </main>
 
         <BottomDock

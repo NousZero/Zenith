@@ -8,6 +8,8 @@ import type {
   BoardCard,
   BoardStatus,
   GateResult,
+  Goal,
+  GoalInput,
   GitStatus,
   GitWorktree,
   WorkspaceEntry,
@@ -156,6 +158,13 @@ const zenithApi: ZenithApi = {
       ipcRenderer.on("workspace:output", handler);
       return () => ipcRenderer.removeListener("workspace:output", handler);
     },
+  },
+  goals: {
+    list: (): Promise<Goal[]> => ipcRenderer.invoke("goals:list"),
+    create: (input: GoalInput): Promise<Goal> => ipcRenderer.invoke("goals:create", input),
+    update: (id: string, input: GoalInput): Promise<Goal> =>
+      ipcRenderer.invoke("goals:update", { id, input }),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke("goals:remove", id),
   },
   voice: {
     status: (): Promise<VoiceStatus> => ipcRenderer.invoke("voice:status"),

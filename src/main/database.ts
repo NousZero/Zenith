@@ -175,6 +175,19 @@ const MIGRATIONS: readonly string[] = [
   `,
   // Images attached to a message, as a JSON list of references to files in the attachments folder.
   `ALTER TABLE messages ADD COLUMN images TEXT;`,
+  // Standing goals the user is working towards, shown in the Goals page.
+  `
+  CREATE TABLE goals (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'done')),
+    progress INTEGER NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX goals_updated_at ON goals (updated_at DESC);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

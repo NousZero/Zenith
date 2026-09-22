@@ -191,6 +191,26 @@ export interface PaneState {
   planMode: boolean;
 }
 
+export type GoalStatus = "active" | "paused" | "done";
+
+// Something the user is working towards, kept between sessions.
+export interface Goal {
+  id: string;
+  title: string;
+  detail: string;
+  status: GoalStatus;
+  progress: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface GoalInput {
+  title: string;
+  detail?: string;
+  status?: GoalStatus;
+  progress?: number;
+}
+
 // Whether speech can be transcribed here, and what is missing when it cannot.
 export interface VoiceStatus {
   available: boolean;
@@ -428,6 +448,12 @@ export interface ZenithApi {
     ): () => void;
   };
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
+  goals: {
+    list(): Promise<Goal[]>;
+    create(input: GoalInput): Promise<Goal>;
+    update(id: string, input: GoalInput): Promise<Goal>;
+    remove(id: string): Promise<void>;
+  };
   voice: {
     status(): Promise<VoiceStatus>;
     setModel(path: string): Promise<VoiceStatus>;

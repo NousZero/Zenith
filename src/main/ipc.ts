@@ -37,6 +37,7 @@ import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
+import { createGoalsStore } from "./goals-store";
 import { createPtyTerminals } from "./pty-terminal";
 import { createVoice } from "./voice";
 import {
@@ -90,6 +91,7 @@ import type {
   ChatMessage,
   ConnectionStatus,
   ContextSnapshot,
+  GoalInput,
   PersonaFile,
   ProviderAdapter,
   SendMessageRequest,
@@ -176,6 +178,7 @@ export function registerIpcHandlers(options: {
   const browser = createBrowser({
     closed: (id) => sendToWindows("browser:closed", { id }),
   });
+  const goals = createGoalsStore(db);
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
   const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
   const customProviders = createCustomProviderStore(
@@ -816,7 +819,14 @@ export function registerIpcHandlers(options: {
     const kind = await availableSandbox();
     return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
   });
-  // Speech to text, transcribed by a local whisper.cpp; nothing leaves this computer.
+  handle("goals:list", async () => goals.list());
+  handle("goals:create", async (_event, input: unknown) => goals.create(input as GoalInput));
+  handle("goals:update", async (_event, payload: { id: unknown; input: unknown }) =>
+    goals.update(String(payload.id), payload.input as GoalInput),
+  );
+  handle("goals:remove", async (_event, id: unknown) => goals.remove(String(id)));
+
+  // Speech to text, transcribed by a local whisper; nothing leaves this computer.
   handle("voice:status", async () => voice.status());
   handle("voice:set-model", async (_event, path: unknown) => {
     if (typeof path !== "string") throw new TypeError("The model path must be text.");

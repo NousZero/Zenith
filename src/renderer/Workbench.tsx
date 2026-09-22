@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   SquareTerminal,
+  Target,
   Trash2,
   X,
 } from "lucide-react";
@@ -49,7 +50,7 @@ function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
-export type ActivityId = "workspace" | "files" | "settings";
+export type ActivityId = "workspace" | "files" | "goals" | "settings";
 
 export function TopBar(props: {
   // Where the user is, such as ["Settings", "Providers"].
@@ -228,6 +229,15 @@ export function ActivityRail(props: {
         >
           <FolderTree className="size-4" aria-hidden />
           Files
+        </button>
+        <button
+          type="button"
+          aria-current={props.active === "goals" ? "page" : undefined}
+          onClick={() => props.onSelect("goals")}
+          className={railButton(props.active === "goals")}
+        >
+          <Target className="size-4" aria-hidden />
+          Goals
         </button>
         <button type="button" onClick={props.onCreateSession} className={railButton(false)}>
           <Plus className="size-4" aria-hidden />
