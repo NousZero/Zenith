@@ -191,6 +191,14 @@ export interface PaneState {
   planMode: boolean;
 }
 
+// Whether speech can be transcribed here, and what is missing when it cannot.
+export interface VoiceStatus {
+  available: boolean;
+  binaryPath?: string;
+  modelPath?: string;
+  problem?: string;
+}
+
 export interface GitStatus {
   isRepository: boolean;
   branch: string;
@@ -420,6 +428,11 @@ export interface ZenithApi {
     ): () => void;
   };
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
+  voice: {
+    status(): Promise<VoiceStatus>;
+    setModel(path: string): Promise<VoiceStatus>;
+    transcribe(audio: Uint8Array): Promise<string>;
+  };
   terminal: {
     available(): Promise<boolean>;
     start(projectPath: string, columns: number, rows: number): Promise<string>;

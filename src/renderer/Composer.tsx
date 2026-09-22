@@ -1,4 +1,4 @@
-import { ArrowUp, Clock, FolderOpen, ImagePlus, ShieldCheck, Square, X } from "lucide-react";
+import { ArrowUp, Clock, FolderOpen, ImagePlus, Mic, ShieldCheck, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
@@ -8,6 +8,7 @@ import { completeCommandName, parseSlashCommand, type Command } from "./commands
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 import { DEFAULT_CLI_MODEL_ID, providerMeta } from "./providers";
+import { useDictation } from "./useDictation";
 
 const MAX_TEXTAREA_HEIGHT_PX = 200;
 const isMac = navigator.userAgent.includes("Mac");
@@ -65,6 +66,9 @@ export function Composer(props: {
   permissionsVersion?: number;
 }) {
   const { prompt, onPromptChange: setPrompt } = props;
+  const dictation = useDictation((text) =>
+    setPrompt(prompt.trim() ? `${prompt.trimEnd()} ${text}` : text),
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const [unknownCommand, setUnknownCommand] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -426,6 +430,17 @@ export function Composer(props: {
             onClick={() => fileRef.current?.click()}
           >
             <ImagePlus />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant={dictation.recording ? "secondary" : "ghost"}
+            disabled={dictation.busy}
+            aria-label={dictation.recording ? "Stop dictating" : "Dictate a message"}
+            aria-pressed={dictation.recording}
+            title={dictation.problem ?? (dictation.recording ? "Stop dictating" : "Dictate")}
+            onClick={() => void dictation.toggle()}
+          >
+            {dictation.recording ? <Square className="fill-current" /> : <Mic />}
           </Button>
           <kbd className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
             {isMac ? "⌘" : "Ctrl"} ↵

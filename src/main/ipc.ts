@@ -38,6 +38,7 @@ import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git"
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
 import { createPtyTerminals } from "./pty-terminal";
+import { createVoice } from "./voice";
 import {
   CLAUDE_SANDBOX_SETTINGS,
   detectSandbox,
@@ -206,6 +207,18 @@ export function registerIpcHandlers(options: {
     const kind = await availableSandbox();
     return kind ? { kind, tempRoot: options.join(options.userDataPath, "sandbox-tmp") } : undefined;
   };
+  // The whisper model the user picked for speech to text, empty until they choose one.
+  const whisperModelPath = () =>
+    (settingStatements.get.get("whisper_model") as { value: string } | undefined)?.value ||
+    undefined;
+  const voice = createVoice({
+    environment: () => ({
+      env: childProcessEnv(),
+      home: homedir(),
+      platform: process.platform,
+    }),
+    model: whisperModelPath,
+  });
   const permissionRules = () => {
     try {
       return parsePermissionRules(permissionRulesText());
@@ -802,6 +815,17 @@ export function registerIpcHandlers(options: {
     settingStatements.set.run("sandbox_commands", enabled === true ? "on" : "off");
     const kind = await availableSandbox();
     return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
+  });
+  // Speech to text, transcribed by a local whisper.cpp; nothing leaves this computer.
+  handle("voice:status", async () => voice.status());
+  handle("voice:set-model", async (_event, path: unknown) => {
+    if (typeof path !== "string") throw new TypeError("The model path must be text.");
+    settingStatements.set.run("whisper_model", path.trim());
+    return voice.status();
+  });
+  handle("voice:transcribe", async (_event, audio: unknown) => {
+    if (!(audio instanceof Uint8Array)) throw new TypeError("The recording must be audio bytes.");
+    return voice.transcribe(audio);
   });
   handle("permissions:get", async () => permissionRulesText());
   handle("permissions:set", async (_event, text: unknown) => {

@@ -11,6 +11,7 @@ import type {
   GitStatus,
   GitWorktree,
   WorkspaceEntry,
+  VoiceStatus,
   WorkspaceFile,
   ChatMessage,
   ConnectionStatus,
@@ -155,6 +156,12 @@ const zenithApi: ZenithApi = {
       ipcRenderer.on("workspace:output", handler);
       return () => ipcRenderer.removeListener("workspace:output", handler);
     },
+  },
+  voice: {
+    status: (): Promise<VoiceStatus> => ipcRenderer.invoke("voice:status"),
+    setModel: (path: string): Promise<VoiceStatus> => ipcRenderer.invoke("voice:set-model", path),
+    transcribe: (audio: Uint8Array): Promise<string> =>
+      ipcRenderer.invoke("voice:transcribe", audio),
   },
   terminal: {
     available: (): Promise<boolean> => ipcRenderer.invoke("terminal:available"),
