@@ -36,6 +36,7 @@ import { BOT_PLATFORMS, type BotPlatform, type BotSettingsUpdate } from "../shar
 import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
 import { createMcpConfig } from "./mcp-config";
+import { createBrowser } from "./browser";
 import { createPtyTerminals } from "./pty-terminal";
 import {
   CLAUDE_SANDBOX_SETTINGS,
@@ -171,6 +172,9 @@ export function registerIpcHandlers(options: {
     },
     () => childProcessEnv(),
   );
+  const browser = createBrowser({
+    closed: (id) => sendToWindows("browser:closed", { id }),
+  });
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
   const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
   const customProviders = createCustomProviderStore(
@@ -360,6 +364,7 @@ export function registerIpcHandlers(options: {
               afterEdit,
               extraTools: mcpTools.forProject,
               sandbox: bashSandbox,
+              browser,
             },
           )
         : adapter.sendMessage(request),
@@ -1165,6 +1170,7 @@ export function registerIpcHandlers(options: {
       scheduler.stop();
       terminal.stopAll();
       terminals.stopAll();
+      browser.closeAll();
       db.close();
     },
   };

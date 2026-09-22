@@ -55,6 +55,78 @@ export interface NativeAgentDeps {
   extraTools?(projectPath: string): Promise<ExtraTools>;
   // The operating-system sandbox for commands, when the user turned it on and it is available.
   sandbox?(): Promise<BashSandbox | undefined>;
+  // Web pages the agent drives, when browsing is available.
+  browser?: BrowserTools;
+}
+
+// What the browser tools need, kept structural so tests can pass a stub.
+export interface BrowserTools {
+  open(url: string, background?: boolean): Promise<{ id: string; title: string; url: string }>;
+  navigate(id: string, url: string): Promise<{ id: string; title: string; url: string }>;
+  readPage(id: string): Promise<string>;
+  click(id: string, selector: string): Promise<string>;
+  fill(id: string, fields: Record<string, string>): Promise<string>;
+  evaluate(id: string, script: string): Promise<string>;
+  list(): { id: string; title: string; url: string }[];
+  close(id: string): void;
+}
+
+function requireText(input: Record<string, unknown>, key: string): string {
+  const value = input[key];
+  if (typeof value !== "string" || !value.trim()) throw new ToolError(`${key} is required.`);
+  return value;
+}
+
+export async function runBrowserTool(
+  browser: BrowserTools | undefined,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<string> {
+  if (!browser) throw new ToolError("Browsing isn't available here.");
+  try {
+    switch (name) {
+      case "BrowserOpen": {
+        const page = await browser.open(requireText(input, "url"), input["background"] !== false);
+        return `Opened ${page.id}: ${page.title} — ${page.url}`;
+      }
+      case "BrowserNavigate": {
+        const page = await browser.navigate(
+          requireText(input, "page_id"),
+          requireText(input, "url"),
+        );
+        return `${page.id} is now on ${page.title} — ${page.url}`;
+      }
+      case "BrowserRead":
+        return await browser.readPage(requireText(input, "page_id"));
+      case "BrowserClick":
+        return await browser.click(requireText(input, "page_id"), requireText(input, "selector"));
+      case "BrowserFill": {
+        const fields = input["fields"];
+        if (typeof fields !== "object" || fields === null || Array.isArray(fields)) {
+          throw new ToolError("fields must be an object of CSS selector to value.");
+        }
+        const pairs: Record<string, string> = {};
+        for (const [selector, value] of Object.entries(fields)) pairs[selector] = String(value);
+        return await browser.fill(requireText(input, "page_id"), pairs);
+      }
+      case "BrowserEvaluate":
+        return await browser.evaluate(requireText(input, "page_id"), requireText(input, "script"));
+      case "BrowserTabs": {
+        const open = browser.list();
+        if (open.length === 0) return "No pages are open.";
+        return open.map((page) => `${page.id}: ${page.title} — ${page.url}`).join("\n");
+      }
+      case "BrowserClose":
+        browser.close(requireText(input, "page_id"));
+        return "Page closed.";
+      default:
+        throw new ToolError(`Unknown browser tool ${name}.`);
+    }
+  } catch (error) {
+    // Page and navigation failures are the model's to work around, not crashes.
+    if (error instanceof ToolError) throw error;
+    throw new ToolError((error as Error).message);
+  }
 }
 
 export function agentPrompt(projectPath: string, subagent: boolean): string {
@@ -299,6 +371,16 @@ export async function* runNativeAgent(
               }
               case "Bash":
                 result = await runBash(projectPath, input, deps.childEnv, request.signal, sandbox);
+                break;
+              case "BrowserOpen":
+              case "BrowserNavigate":
+              case "BrowserRead":
+              case "BrowserClick":
+              case "BrowserFill":
+              case "BrowserEvaluate":
+              case "BrowserTabs":
+              case "BrowserClose":
+                result = await runBrowserTool(deps.browser, call.name, input);
                 break;
               case "Remember": {
                 if (!deps.profilePath) throw new ToolError("Memory is not available here.");
