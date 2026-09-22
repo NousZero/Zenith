@@ -60,14 +60,14 @@
 
 Decided 2026-09-15: the harness phases remain Zenith's single roadmap; `PLAN.md` M4-M11 is superseded where it overlaps. The M3 definition studio removed in the harness reset is rebuilt lighter and file-based rather than restored. Order follows what makes Zenith a full replacement for Hermes Agent and OpenCode.
 
-| Phase | Scope | Sources |
-|---|---|---|
-| **H. Skills, agents, commands** | File-based skills (`SKILL.md`, compatible with Claude Code, OpenCode, and Hermes layouts) invoked as `/skill-name`; custom agents (Markdown with front matter: prompt, model, allowed tools); custom slash commands from Markdown files with `$ARGUMENTS`; plan mode (read-only planning, then build); project context files (`AGENTS.md`, `CLAUDE.md`) loaded into agent runs. Editor UI for all of them. | OpenCode `skill/`, `command/`, `agent/`, plan tools; Hermes skills system, context files |
-| **I. Zenith's own agent loop** | A native tool-calling loop for API-key providers, OpenRouter, Ollama, and LM Studio with the same tools, approvals, diffs, checkpoints, and task view as Claude Code agent mode; subagents (task delegation) for every agent. | OpenCode `tool/`, `session/`, `task` tool; Hermes `delegate_tool` |
-| **J. Workspace** | File tree, read-only editor with diff view, integrated terminal panel with approvals, Git status/diff/commit with approval, worktrees, and git-based snapshots that also capture changes made by commands. | OpenCode `snapshot/`, `worktree/`, `git/`; old M5 and M7 |
-| **K. Automation and memory** | Scheduled tasks (cron) that run a prompt and deliver the result to a paired bot; an agent-writable memory tool with approval; optional local embeddings for Ask. | Hermes `cronjob_tools`, `memory_tool` |
-| **L. Code intelligence and extensibility** | LSP diagnostics fed to agents, formatters after edits, per-tool allow/ask/deny permission rules, plugins, more bot platforms (Signal, Home Assistant). | OpenCode `lsp/`, `format/`, `permission/`, `plugin/`; Hermes gateway |
-| **M. Hardening and release** | Design polish, threat-model review, Windows and Linux verification, signed packages. | old M9-M11 |
+| Phase                                      | Scope                                                                                                                                                                                                                                                                                                                                                                                                      | Sources                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **H. Skills, agents, commands**            | File-based skills (`SKILL.md`, compatible with Claude Code, OpenCode, and Hermes layouts) invoked as `/skill-name`; custom agents (Markdown with front matter: prompt, model, allowed tools); custom slash commands from Markdown files with `$ARGUMENTS`; plan mode (read-only planning, then build); project context files (`AGENTS.md`, `CLAUDE.md`) loaded into agent runs. Editor UI for all of them. | OpenCode `skill/`, `command/`, `agent/`, plan tools; Hermes skills system, context files |
+| **I. Zenith's own agent loop**             | A native tool-calling loop for API-key providers, OpenRouter, Ollama, and LM Studio with the same tools, approvals, diffs, checkpoints, and task view as Claude Code agent mode; subagents (task delegation) for every agent.                                                                                                                                                                              | OpenCode `tool/`, `session/`, `task` tool; Hermes `delegate_tool`                        |
+| **J. Workspace**                           | File tree, read-only editor with diff view, integrated terminal panel with approvals, Git status/diff/commit with approval, worktrees, and git-based snapshots that also capture changes made by commands.                                                                                                                                                                                                 | OpenCode `snapshot/`, `worktree/`, `git/`; old M5 and M7                                 |
+| **K. Automation and memory**               | Scheduled tasks (cron) that run a prompt and deliver the result to a paired bot; an agent-writable memory tool with approval; optional local embeddings for Ask.                                                                                                                                                                                                                                           | Hermes `cronjob_tools`, `memory_tool`                                                    |
+| **L. Code intelligence and extensibility** | LSP diagnostics fed to agents, formatters after edits, per-tool allow/ask/deny permission rules, plugins, more bot platforms (Signal, Home Assistant).                                                                                                                                                                                                                                                     | OpenCode `lsp/`, `format/`, `permission/`, `plugin/`; Hermes gateway                     |
+| **M. Hardening and release**               | Design polish, threat-model review, Windows and Linux verification, signed packages.                                                                                                                                                                                                                                                                                                                       | old M9-M11                                                                               |
 
 ## Phase A design
 
@@ -282,3 +282,116 @@ Requested by the user on 2026-09-15, to be worked on once all phases are finishe
 - **Gemini CLI and Copilot CLI:** in a project folder they now run as ACP agents (`gemini --acp`, `copilot --acp`) with Zenith's approvals and undo; without a folder they stay read-only chats. The folder button is available for every connection.
 - **Save as skill:** "Save as skill…" on a reply opens Settings → Skills with a draft named after the session, described by the request, and holding the reply under "What worked before" plus a steps section to edit before saving.
 - **Verified:** a unit test checks that uninstalled extra agents are hidden, installed ones are ready, and only always-listed agents are asked for a version. Live, the real `copilot --acp` and `gemini --acp` each completed the ACP handshake and opened a session (no prompt sent). In the packaged app, "Save as skill…" produced the draft and saved `/day-one-check`. None of the extra agents are installed here, so their launch arguments are checked against the registry only.
+
+## Terminal-shaped transcript, dispatch facts, and a prompt queue (implemented 2026-09-21)
+
+Ideas taken from reading Amoeba 1.130.0 (a VS Code fork with a coordination daemon) in an isolated
+profile: its rooms read 1:1 like the CLI they drive, its composer states what a send will do before
+it happens, and a prompt written during a run is queued instead of refused. The cloud parts of that
+product — accounts, a server-brokered GitHub token, multiplayer lanes, telemetry — stay out of
+Zenith by principle.
+
+- **Transcript:** a prompt keeps its own band in the scrollback (`❯`, left rule), a reply carries a
+  quiet line naming the connection that wrote it, and each tool call is a terminal line: a status
+  bullet, the verb, what it acted on, a `└ $ command` line for shell commands, and the result under
+  `⎿`, red when the call failed or was denied. New rows rise in unless the system asks for reduced
+  motion. The action list sits on a left rule instead of a floating card, so one turn reads as one
+  column.
+- **Dispatch facts:** under the composer, three chips say which connection answers, which folder it
+  may touch (or "no folder · chat only"), and how much it may do without asking ("asks before
+  changes", "sandboxed commands", or "plan only"). While a reply runs, that row becomes one status
+  sentence — the running action's title, or "waiting for your approval".
+- **Queue:** a prompt sent during a run is held (`useHarness`: `queuePrompt`, `cancelQueue`,
+  `queuedPrompt`) and goes on its own as soon as the last reply ends, shown as a cancellable
+  "Queued · …" chip. The send button reads "Queue" while a reply is running, beside Stop.
+- **Jump to latest:** reading back through a long run shows a button that returns to the newest
+  output and re-arms the stick-to-bottom scroll.
+- **Verified:** the first component tests in the repo (`tests/component/transcript.test.tsx`) cover
+  a failed sandboxed command's row and the composer's facts, queue chip, and Queue button. In the
+  packaged app, driven by a stand-in `claude` binary on `PATH` (no quota spent), a turn showed
+  `Run` with `└ $ npm test -- --silent` and `⎿ 2 suites failed` in red, `Read src/main/ipc.ts`,
+  `Edit README.md`, the reply under "CLAUDE CODE", "waiting for your approval" in the composer, and
+  a prompt queued during the run that started its own turn after the approval.
+
+## Guardrails: one choice instead of a rules file (implemented 2026-09-21)
+
+Read `studioKjm/ai-harness-template` (v2.6.0) for reference. Its core claim is that guardrails
+belong in structure, not in prompts: boundary presets (strict / standard / permissive), blocking
+gates, and a feedback loop that turns violations into rules. Zenith already had the enforcement;
+what it lacked was a way to choose a posture without writing rule lines.
+
+- **Postures** (`shared/permissions.ts`): `POSTURES` holds three complete rule sets — Locked down
+  (asks before every change and command), Standard (the project's own checks run freely; changes,
+  pushes and resets ask; `rm -rf` denied), Open (edits and commands run; push asks; `rm -rf` and
+  `git reset --hard` denied). All three deny reading `.env`, `.pem`, `id_rsa*` and running `sudo`.
+  `postureOf(text)` recognises a posture regardless of comments or spacing, so hand-written rules
+  stay "custom".
+- **Settings → Guardrails** (renamed from Plugins): the posture cards come first, then sandboxed
+  commands, then MCP servers. Choosing a card writes the rules; the hand-written editor is still
+  there under "Write the rules yourself", and a note says when your own rules match no posture.
+- **Composer:** the third dispatch chip now names the posture in force ("locked down", "standard",
+  "open"), with its summary on hover, and still shows "plan only" or "sandboxed commands" when
+  those override it.
+- **Verified:** unit tests check that every posture parses, that all three deny reading `.env`,
+  and that each one decides what its summary promises; `postureOf` ignores comments and rejects
+  unrelated text. A component test covers the chip. In the packaged app, choosing Standard wrote
+  the rules (`deny Read *.env` first), marked the card in use, and the composer chip changed to
+  "standard".
+
+## Checks after a reply, and rules written by denying twice (implemented 2026-09-21)
+
+Two more ideas from `studioKjm/ai-harness-template`: gates that run over what changed, and a
+feedback loop where a violation becomes a rule. Both are local, and neither blocks anything on its
+own — Zenith reports, the person decides.
+
+- **Gate strip** (`main/gates.ts`, `GateStrip` in `AgentPanel.tsx`): when a reply that used tools
+  ends in a project folder, three checks run over the files Git reports as changed and appear as
+  chips under the action list.
+  - **Secrets:** named patterns (Anthropic/OpenAI, GitHub, AWS, Google, Slack, private keys, and
+    keys written into code) over changed text files, skipping build folders, binaries, files over
+    256 KB, and lines that read as placeholders. Findings say `file:line: looks like …`.
+  - **Errors:** the project's language server, the same one used after an approved edit, over up
+    to ten changed files it covers; "skipped" when no server covers them (`servedByLanguageServer`).
+  - **Scope:** how many files changed, failing above fifteen — their "surgical changes" gate.
+  - Clicking a chip shows its findings; **Ask the agent to fix** sends them back as the next
+    prompt (`shared/gates.ts`), so nothing is copied by hand.
+- **Deny twice, write the rule:** a permission prompt now carries the tool and the same subject a
+  rule is matched against (`ruleSubject`). Deny something once and the next time the card offers
+  **Deny and never ask again**, which appends `deny Bash git push*` (commands: first two words) or
+  `deny Edit README.md` (paths) to the rules and answers the prompt. ACP agents keep their own
+  permissions and don't set these fields, so no button appears for them.
+- **Verified:** unit tests cover the rule text, that a written rule then denies the same command,
+  and which option answers a denial; integration tests cover a planted key found at `file:line`,
+  clean files and placeholders passing, language-server errors, a sixteen-file change failing
+  scope, and the "skipped" cases. In the packaged app, a turn against a folder holding a planted
+  key showed `✗ Secrets · ✓ Errors · ✓ Scope` with `leak.ts:1`, "Ask the agent to fix" sent the
+  findings as the next prompt, and denying the same edit twice offered the rule, saved
+  `deny Edit README.md`, and the third attempt was refused without asking.
+
+## A second opinion on the changes (implemented 2026-09-21)
+
+The reference template's newest gate (`check-security-ai.sh`) asks a _separate_ model to look for
+vulnerabilities, on the grounds that the model which wrote the code will defend it. Zenith already
+runs several connections, so the reviewer can simply be a different one.
+
+- **Review with <connection>** sits beside the checks after a reply. It sends one plain chat
+  request — no project folder, so the reviewer gets no tools — carrying a fixed system prompt and
+  the patch: `git diff HEAD` plus new files' contents, capped at 60,000 characters (`main/review.ts`).
+- The reviewer is picked in the window: a ready connection that brings its own model and is **not**
+  the one that wrote the change; it falls back to the same connection only when nothing else is
+  ready, and the button disappears when none is.
+- The prompt asks for `VERDICT: clean` or `VERDICT: findings` followed by severity / where /
+  problem / fix blocks, and for security only. Anything else reads as **unclear**, never as
+  approval (`reviewVerdict`). The chip turns ✓, ✗ or –, and its panel shows the answer as it came.
+- It costs one request, so it only runs when clicked.
+- **Fixed on the way:** `createProviderRegistry` kept the _last_ adapter registered for an id.
+  Gemini CLI and Copilot CLI are registered twice — once as the chat-or-agent wrapper, once as a
+  plain ACP agent — so their chat requests were going to ACP, which fails outside a project folder
+  ("The agent exited (code 0)"). The registry now keeps the first adapter for an id, and the two
+  ACP adapters are held in their own list for disposal.
+- **Verified:** unit tests cover the verdict parsing (case, spacing, "unclear" for anything else)
+  and the registry's first-wins rule; an integration test builds a real repository and checks the
+  patch carries both changed and new files and is empty on a clean tree. In the packaged app, with
+  stand-in `claude` and `copilot` binaries on `PATH` (no quota spent), a turn showed
+  `✗ Secrets · ✓ Errors · ✓ Scope`, then "Review with Copilot CLI" returned `VERDICT: findings`
+  with `WHERE: leak.ts:1` and the chip turned `✗ Review`.

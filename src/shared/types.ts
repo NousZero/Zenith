@@ -4,8 +4,24 @@ import type { LibraryItem, LibraryKind } from "./library";
 
 export type ChatRole = "user" | "assistant" | "system";
 
-// An image pasted into a message. Stored by reference; `data` (base64) is filled in only by the
-// main process when a request is sent.
+// One check run over what a reply changed. "skipped" means the check could not say either way.
+export interface GateResult {
+  id: "secrets" | "problems" | "scope";
+  label: string;
+  state: "pass" | "fail" | "skipped";
+  detail: string;
+  // Lines to show, and to hand back to the agent when the check failed.
+  findings: string[];
+}
+
+// A second opinion on the current changes, from a connection that did not write them.
+export interface ReviewResult {
+  // "unclear" means the reviewer answered in some other shape; read the text.
+  verdict: "clean" | "findings" | "unclear";
+  reviewer: string;
+  text: string;
+}
+
 // Whether agent commands run in the operating system's sandbox; `available` names it, or is null
 // where this system has none.
 export interface SandboxStatus {
@@ -13,6 +29,8 @@ export interface SandboxStatus {
   enabled: boolean;
 }
 
+// An image pasted into a message. Stored by reference; `data` (base64) is filled in only by the
+// main process when a request is sent.
 export interface ImageAttachment {
   id: string;
   mediaType: string;
@@ -110,6 +128,10 @@ export interface PermissionChoice {
 export interface PermissionPrompt {
   title: string;
   options: PermissionChoice[];
+  // The tool and what it would act on, so denying twice can offer a rule. Agents that keep their
+  // own permissions (ACP) don't set these.
+  tool?: string;
+  subject?: string;
   // Command text or tool input shown under the title.
   detail?: string;
   // Unified diff of a proposed file change.
@@ -426,6 +448,16 @@ export interface ZenithApi {
   sandbox: {
     status(): Promise<SandboxStatus>;
     set(enabled: boolean): Promise<SandboxStatus>;
+  };
+  gates: {
+    // Checks over what changed in the project folder: secrets, language-server errors, scope.
+    run(projectPath: string): Promise<GateResult[]>;
+    // One request to another connection, asking it to review the current changes.
+    review(input: {
+      projectPath: string;
+      providerId: string;
+      modelId: string;
+    }): Promise<ReviewResult>;
   };
   permissions: {
     // Agent permission rules as text, one "allow|ask|deny Tool pattern" per line.

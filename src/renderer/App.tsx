@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { denyOptionId, denyRuleFor } from "../shared/deny-rule";
 import { buildSkillPrompt, expandCommand, type LibraryItem } from "../shared/library";
 import { PERSONALITIES } from "../shared/personalities";
 import { BoardDialog } from "./BoardDialog";
@@ -72,7 +73,13 @@ import {
   TopBar,
   type ActivityId,
 } from "./Workbench";
-import type { ConnectionStatus, ImageAttachment, PersonaFile, SessionState } from "../shared/types";
+import type {
+  ConnectionStatus,
+  ImageAttachment,
+  PermissionRequest,
+  PersonaFile,
+  SessionState,
+} from "../shared/types";
 import {
   DEFAULT_CLI_MODEL_ID,
   preferredConnection,
@@ -101,7 +108,7 @@ const SETTINGS_TABS = [
   { id: "agents", label: "Agents" },
   { id: "skills", label: "Skills" },
   { id: "commands", label: "Commands" },
-  { id: "plugins", label: "Plugins" },
+  { id: "plugins", label: "Guardrails" },
   { id: "automation", label: "Automation" },
 ] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
@@ -154,6 +161,9 @@ export function App() {
     setMemoryText,
     setPersonality,
     sendToPane,
+    queuedPrompt,
+    queuePrompt,
+    cancelQueue,
     retryPane,
     undoPane,
     abortPane,
@@ -176,6 +186,8 @@ export function App() {
     ...new Set(session.panes.flatMap((pane) => (pane.projectPath ? [pane.projectPath] : []))),
   ].join("\n");
   const [libraryVersion, setLibraryVersion] = useState(0);
+  // Bumped when the permission rules change, so the composer's facts re-read them.
+  const [guardVersion, setGuardVersion] = useState(0);
   const projectPaths = projectPathsKey ? projectPathsKey.split("\n") : [];
   const [dockProject, setDockProject] = useState<string | null>(null);
 
@@ -377,10 +389,48 @@ export function App() {
 
   // Multiple panes are on hold: each session shows and sends to its first pane only. Extra panes
   // in older sessions are kept, not deleted.
+  // Rules for actions already denied in this session, so the second time the card can offer one.
+  const [deniedRules, setDeniedRules] = useState<string[]>([]);
+
+  function rememberDenial(request: PermissionRequest) {
+    const rule = denyRuleFor(request);
+    if (!rule) return;
+    setDeniedRules((current) => (current.includes(rule) ? current : [...current, rule]));
+  }
+
+  async function alwaysDeny(request: PermissionRequest, rule: string) {
+    const current = await window.zenith.permissions.get().catch(() => "");
+    const text = current.trim() === "" ? rule : `${current.trim()}\n${rule}`;
+    const error = await window.zenith.permissions.set(text);
+    if (error) {
+      console.error("Failed to save the rule:", error);
+      return;
+    }
+    setGuardVersion((value) => value + 1);
+    respondPermission(request.permissionId, denyOptionId(request));
+  }
+
   const pane = session.panes[0];
+  // What the run is doing right now, in one sentence, for the composer.
+  const runningActivity = pane
+    ? agentTurns[pane.id]?.activities.findLast((activity) => activity.status === "running")
+    : undefined;
+  const runStatus =
+    pane && streamingPaneIds.has(pane.id)
+      ? permissions.length > 0
+        ? "waiting for your approval"
+        : (runningActivity?.title ?? "thinking…")
+      : null;
+
+  // A prompt written during a run waits its turn instead of being refused.
   function sendToCurrent(prompt: string, outgoing = prompt, images: ImageAttachment[] = []) {
     const current = session.panes[0];
-    if (current) sendToPane(current, prompt, outgoing, images);
+    if (!current) return;
+    if (streamingPaneIds.size > 0) {
+      queuePrompt(prompt, images);
+      return;
+    }
+    sendToPane(current, prompt, outgoing, images);
   }
 
   // A new approval opens the bottom panel (on its Approvals tab), so a waiting agent is noticed.
@@ -654,7 +704,7 @@ export function App() {
     },
     {
       name: "settings",
-      title: "Settings: providers, themes, soul, library, plugins",
+      title: "Settings: providers, themes, soul, library, guardrails",
       icon: Settings,
       run: () => openSettings("appearance"),
     },
@@ -717,7 +767,7 @@ export function App() {
     agents: "Instructions and tool lists a pane can follow. Choose one from the pane's menu.",
     skills: "Instructions you run with /name in the composer.",
     commands: "Prompt templates you run with /name; $ARGUMENTS is replaced with what you type.",
-    plugins: "MCP servers add tools to agents; permission rules decide what runs without asking.",
+    plugins: "How much agents may do on their own, and the tools they can reach.",
     automation: "Bots, scheduled tasks, and usage insights.",
   };
 
@@ -781,10 +831,19 @@ export function App() {
             compacting={compactingPaneIds.has(pane.id)}
             onCompact={() => void compactPane(pane.id)}
             permissions={permissions.filter((request) => request.paneId === pane.id)}
-            onRespondPermission={respondPermission}
+            onRespondPermission={(permissionId, optionId) => {
+              const request = permissions.find((item) => item.permissionId === permissionId);
+              if (request && optionId !== null && optionId.startsWith("deny")) {
+                rememberDenial(request);
+              }
+              respondPermission(permissionId, optionId);
+            }}
+            deniedRules={deniedRules}
+            onAlwaysDeny={(request, rule) => void alwaysDeny(request, rule)}
             onChange={(patch) => updatePane(pane.id, patch)}
             onRemove={() => removePane(pane.id)}
             onSend={(prompt) => sendToPane(pane, prompt)}
+            onFixGates={(prompt) => sendToCurrent(prompt)}
             onRetry={() => retryPane(pane.id)}
             onUndo={() => undoPane(pane.id)}
             onBranch={branchToSession}
@@ -818,6 +877,10 @@ export function App() {
         onPromptChange={setComposerPrompt}
         onSend={(prompt, images) => sendToCurrent(prompt, prompt, images)}
         onStop={abortAll}
+        queued={queuedPrompt}
+        onCancelQueue={cancelQueue}
+        status={runStatus}
+        permissionsVersion={guardVersion}
       />
     </>
   );
@@ -952,8 +1015,8 @@ export function App() {
           {settingsTab === "plugins" &&
             narrow(
               <>
+                <PermissionsSection onChanged={() => setGuardVersion((value) => value + 1)} />
                 <SandboxSection />
-                <PermissionsSection />
                 <McpSection />
               </>,
             )}

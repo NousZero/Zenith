@@ -250,6 +250,16 @@ const exists = (path: string) =>
 // Language servers per project, started on the first edit of a matching file and kept until
 // Zenith quits. A server that is not installed or fails to start is not tried again.
 // ponytail: servers stay running for the app's lifetime; add an idle timeout if memory matters.
+// Whether any known language server covers this file, so a check can say "not looked at"
+// instead of "no errors" for a language nothing serves.
+export function servedByLanguageServer(
+  filePath: string,
+  servers: readonly LanguageServerSpec[] = LANGUAGE_SERVERS,
+): boolean {
+  const extension = extname(filePath).toLowerCase();
+  return servers.some((server) => extension in server.languages);
+}
+
 export function createLanguageServers(
   env: () => NodeJS.ProcessEnv,
   servers: readonly LanguageServerSpec[] = LANGUAGE_SERVERS,

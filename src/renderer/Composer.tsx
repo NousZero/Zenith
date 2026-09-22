@@ -1,7 +1,8 @@
-import { ArrowUp, ImagePlus, Square, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowUp, Clock, FolderOpen, ImagePlus, ShieldCheck, Square, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
+import { postureOf, type Posture } from "../shared/permissions";
 import type { ImageAttachment, PaneState } from "../shared/types";
 import { completeCommandName, parseSlashCommand, type Command } from "./commands";
 import { Button } from "./components/ui/button";
@@ -15,6 +16,37 @@ export const COMPOSER_INPUT_ID = "composer-input";
 // The library can hold hundreds of skills; the menu narrows as the name is typed.
 const MAX_MENU_ITEMS = 40;
 
+// One fact about what pressing send will do: which connection answers, which folder it may
+// touch, and how much it may do without asking.
+function Fact(props: {
+  icon?: typeof FolderOpen;
+  dotClass?: string;
+  children: ReactNode;
+  title?: string | undefined;
+  dim?: boolean;
+}) {
+  return (
+    <span
+      title={props.title}
+      className={cn(
+        "flex min-w-0 shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px]",
+        props.dim ? "border-dashed text-muted-foreground/60" : "text-muted-foreground",
+      )}
+    >
+      {props.icon ? (
+        <props.icon className="size-3 shrink-0" aria-hidden />
+      ) : (
+        <span className={cn("size-1.5 shrink-0 rounded-full", props.dotClass)} />
+      )}
+      <span className="truncate font-mono">{props.children}</span>
+    </span>
+  );
+}
+
+function folderName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
 export function Composer(props: {
   panes: PaneState[];
   readyProviders: string[];
@@ -24,6 +56,13 @@ export function Composer(props: {
   onPromptChange(prompt: string): void;
   onSend(prompt: string, images: ImageAttachment[]): void;
   onStop(): void;
+  // A prompt waiting for the current reply to finish.
+  queued?: string | null;
+  onCancelQueue?(): void;
+  // One sentence about the run in progress, shown in place of the dispatch facts.
+  status?: string | null;
+  // Bumped when the permission rules change, so the facts re-read them.
+  permissionsVersion?: number;
 }) {
   const { prompt, onPromptChange: setPrompt } = props;
   const [activeIndex, setActiveIndex] = useState(0);
@@ -32,6 +71,24 @@ export function Composer(props: {
   const fileRef = useRef<HTMLInputElement>(null);
   const [images, setImages] = useState<{ ref: ImageAttachment; url: string }[]>([]);
   const [imageError, setImageError] = useState("");
+  const [sandboxed, setSandboxed] = useState(false);
+  const [posture, setPosture] = useState<Posture | undefined>(undefined);
+
+  // What a send is allowed to do, read once so the composer can say it before anything happens.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      window.zenith.sandbox.status().catch(() => undefined),
+      window.zenith.permissions.get().catch(() => ""),
+    ]).then(([status, rules]) => {
+      if (cancelled) return;
+      if (status) setSandboxed(status.enabled && status.available !== null);
+      setPosture(postureOf(rules ?? ""));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.permissionsVersion]);
 
   // Stores each image in Zenith's data folder and keeps a preview for this message.
   async function attach(files: readonly File[]) {
@@ -183,6 +240,20 @@ export function Composer(props: {
           }
         }}
       >
+        {props.queued && (
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+            <Clock className="size-3 shrink-0 text-primary" aria-hidden />
+            <span className="min-w-0 flex-1 truncate font-mono">Queued · {props.queued}</span>
+            <button
+              type="button"
+              aria-label="Cancel the queued prompt"
+              onClick={props.onCancelQueue}
+              className="shrink-0 cursor-pointer rounded px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X className="size-3" aria-hidden />
+            </button>
+          </div>
+        )}
         {images.length > 0 && (
           <ul aria-label="Attached images" className="flex flex-wrap gap-2 px-3 pt-3">
             {images.map((item) => (
@@ -248,8 +319,8 @@ export function Composer(props: {
           }}
           placeholder={
             props.panes.length === 1
-              ? "Message…  Type / for commands"
-              : "Ask every included pane…  Type / for commands"
+              ? "Message… · type / for commands"
+              : "Ask every included pane… · type / for commands"
           }
           className="block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
@@ -271,6 +342,42 @@ export function Composer(props: {
               <span className="text-xs text-warning">
                 Included panes need a ready connection and a model before sending.
               </span>
+            ) : props.streaming && props.status ? (
+              <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-pulse" />
+                <span className="truncate font-mono">{props.status}</span>
+              </span>
+            ) : props.panes.length === 1 && props.panes[0] ? (
+              <>
+                <Fact
+                  dotClass={providerMeta(props.panes[0].providerId).dotClass}
+                  dim={ready.length === 0}
+                >
+                  {props.panes[0].modelId && props.panes[0].modelId !== DEFAULT_CLI_MODEL_ID
+                    ? props.panes[0].modelId
+                    : providerMeta(props.panes[0].providerId).label}
+                </Fact>
+                <Fact
+                  icon={FolderOpen}
+                  dim={!props.panes[0].projectPath}
+                  title={props.panes[0].projectPath ?? undefined}
+                >
+                  {props.panes[0].projectPath
+                    ? folderName(props.panes[0].projectPath)
+                    : "no folder · chat only"}
+                </Fact>
+                {props.panes[0].projectPath && (
+                  <Fact icon={ShieldCheck} title={posture?.summary}>
+                    {props.panes[0].planMode
+                      ? "plan only"
+                      : sandboxed
+                        ? "sandboxed commands"
+                        : posture
+                          ? posture.label.toLowerCase()
+                          : "asks before changes"}
+                  </Fact>
+                )}
+              </>
             ) : (
               included.map((pane) => {
                 const isReady = ready.includes(pane);
@@ -323,17 +430,22 @@ export function Composer(props: {
           <kbd className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
             {isMac ? "⌘" : "Ctrl"} ↵
           </kbd>
-          {props.streaming ? (
+          {props.streaming && (
             <Button size="sm" variant="secondary" onClick={props.onStop}>
               <Square className="fill-current" />
               Stop
             </Button>
-          ) : (
-            <Button size="sm" disabled={!canSend && !slash} onClick={submit}>
-              <ArrowUp />
-              {slash ? "Run" : props.panes.length === 1 ? "Send" : `Send to ${ready.length}`}
-            </Button>
           )}
+          <Button size="sm" disabled={!canSend && !slash} onClick={submit}>
+            {props.streaming ? <Clock /> : <ArrowUp />}
+            {props.streaming
+              ? "Queue"
+              : slash
+                ? "Run"
+                : props.panes.length === 1
+                  ? "Send"
+                  : `Send to ${ready.length}`}
+          </Button>
         </div>
       </div>
     </div>

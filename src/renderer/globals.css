@@ -68,6 +68,24 @@
       opacity: 1;
     }
   }
+
+  /* A tool row rises in from below, so actions never appear out of nowhere mid-run. */
+  @keyframes zenith-row-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .activity-row {
+    animation: zenith-row-in 180ms ease-out;
+  }
 }
 
 :root {
@@ -448,9 +466,9 @@
 .workbench-grid {
   background-color: hsl(var(--background));
   background-image:
-    linear-gradient(hsl(var(--border) / 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(var(--border) / 0.55) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(hsl(var(--border) / 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 .eyebrow {

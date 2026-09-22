@@ -1,16 +1,8 @@
-import {
-  Ban,
-  CheckCircle2,
-  Circle,
-  CircleDot,
-  Clock,
-  History,
-  Loader2,
-  XCircle,
-} from "lucide-react";
-import { useState } from "react";
+import { CheckCircle2, Circle, CircleDot, History, ShieldCheck, Wand2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
-import type { AgentActivity } from "../shared/types";
+import { gateFixPrompt } from "../shared/gates";
+import type { AgentActivity, GateResult, ReviewResult } from "../shared/types";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 import type { AgentTurn } from "./useHarness";
@@ -36,22 +28,224 @@ export function DiffView({ diff }: { diff: string }) {
   );
 }
 
-const STATUS: Record<
-  AgentActivity["status"],
-  { icon: typeof Circle; className: string; label: string }
-> = {
-  running: { icon: Loader2, className: "text-primary motion-safe:animate-spin", label: "Running" },
-  "awaiting-approval": { icon: Clock, className: "text-warning", label: "Waiting for approval" },
-  done: { icon: CheckCircle2, className: "text-success", label: "Done" },
-  failed: { icon: XCircle, className: "text-danger", label: "Failed" },
-  denied: { icon: Ban, className: "text-muted-foreground", label: "Denied" },
+const STATUS: Record<AgentActivity["status"], { className: string; label: string }> = {
+  running: { className: "bg-primary motion-safe:animate-pulse", label: "Running" },
+  "awaiting-approval": { className: "bg-warning", label: "Waiting for approval" },
+  done: { className: "bg-success", label: "Done" },
+  failed: { className: "bg-danger", label: "Failed" },
+  denied: { className: "bg-muted-foreground", label: "Denied" },
 };
+
+// A tool call reads like a terminal line: a status bullet, the verb, then what it acted on.
+// Commands get their own "$" line, and every result sits under "⎿", the way the CLIs print it.
+function ActivityRow({ activity }: { activity: AgentActivity }) {
+  const status = STATUS[activity.status];
+  const run = /^Run (in sandbox: |outside sandbox: )?/.exec(activity.title);
+  const command = run ? activity.title.slice(run[0].length) : "";
+  const verb = run ? "Run" : (activity.title.split(" ")[0] ?? activity.title);
+  const target = run
+    ? (run[1] ?? "").replace(":", "").trim()
+    : activity.title.split(" ").slice(1).join(" ");
+
+  return (
+    <li className="activity-row flex flex-col gap-0.5 font-mono text-[11px] leading-relaxed">
+      <span className="flex items-baseline gap-2">
+        <span
+          aria-label={status.label}
+          className={cn("size-1.5 shrink-0 translate-y-[-1px] rounded-full", status.className)}
+        />
+        <span className="min-w-0 truncate">
+          <span className="font-semibold text-foreground">{verb}</span>
+          {target && <span className="text-muted-foreground"> {target}</span>}
+        </span>
+      </span>
+      {command && (
+        <span className="flex gap-1.5 pl-3.5 text-muted-foreground">
+          <span aria-hidden>└</span>
+          <span className="min-w-0 truncate">
+            <span className="text-primary">$</span> {command}
+          </span>
+        </span>
+      )}
+      {activity.detail && activity.status !== "done" && (
+        <span
+          className={cn(
+            "flex gap-1.5 pl-3.5",
+            activity.status === "failed" || activity.status === "denied"
+              ? "text-danger"
+              : "text-muted-foreground",
+          )}
+        >
+          <span aria-hidden>⎿</span>
+          <span className="line-clamp-2 min-w-0">{activity.detail}</span>
+        </span>
+      )}
+    </li>
+  );
+}
+
+const GATE_STATE: Record<GateResult["state"], string> = {
+  pass: "border-success/40 text-success",
+  fail: "border-danger/50 text-danger",
+  skipped: "border-border text-muted-foreground",
+};
+
+// What the project looks like after a reply that could change files: leaked secrets, errors the
+// language server reports, and how far the change spread. Findings go back to the agent in one
+// click rather than being copied by hand.
+function GateStrip(props: {
+  projectPath: string;
+  onFix(prompt: string): void;
+  // The connection asked to review the changes: another one where possible, so the reviewer is
+  // not the model that wrote them.
+  reviewer?: { providerId: string; modelId: string; label: string } | undefined;
+}) {
+  const [gates, setGates] = useState<GateResult[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [review, setReview] = useState<ReviewResult | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const { projectPath, reviewer } = props;
+
+  function runReview() {
+    if (!reviewer) return;
+    setReviewing(true);
+    setOpen("review");
+    window.zenith.gates
+      .review({ projectPath, providerId: reviewer.providerId, modelId: reviewer.modelId })
+      .then(setReview)
+      .catch((error: unknown) =>
+        setReview({
+          verdict: "unclear",
+          reviewer: reviewer.label,
+          text: error instanceof Error ? error.message : String(error),
+        }),
+      )
+      .finally(() => setReviewing(false));
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    window.zenith.gates
+      .run(projectPath)
+      .then((results) => {
+        if (!cancelled) setGates(results);
+      })
+      .catch((error: unknown) => console.error("Failed to run the checks:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath]);
+
+  if (gates === null) {
+    return (
+      <p role="status" className="eyebrow text-muted-foreground">
+        Checking what changed…
+      </p>
+    );
+  }
+
+  const failed = gates.filter((gate) => gate.state === "fail");
+  const shown = gates.find((gate) => gate.id === open);
+
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {gates.map((gate) => (
+          <button
+            key={gate.id}
+            type="button"
+            aria-pressed={open === gate.id}
+            title={gate.detail}
+            onClick={() => setOpen(open === gate.id ? null : gate.id)}
+            className={cn(
+              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              GATE_STATE[gate.state],
+              open === gate.id && "bg-accent",
+            )}
+          >
+            {gate.state === "pass" ? "✓" : gate.state === "fail" ? "✗" : "–"} {gate.label}
+          </button>
+        ))}
+        {review && (
+          <button
+            type="button"
+            aria-pressed={open === "review"}
+            title={`Reviewed by ${review.reviewer}`}
+            onClick={() => setOpen(open === "review" ? null : "review")}
+            className={cn(
+              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              review.verdict === "clean"
+                ? GATE_STATE.pass
+                : review.verdict === "findings"
+                  ? GATE_STATE.fail
+                  : GATE_STATE.skipped,
+              open === "review" && "bg-accent",
+            )}
+          >
+            {review.verdict === "clean" ? "✓" : review.verdict === "findings" ? "✗" : "–"} Review
+          </button>
+        )}
+        {reviewer && !review && (
+          <Button size="xs" variant="ghost" disabled={reviewing} onClick={runReview}>
+            <ShieldCheck />
+            {reviewing ? `${reviewer.label} is reading…` : `Review with ${reviewer.label}`}
+          </Button>
+        )}
+        {failed.length > 0 && (
+          <Button
+            size="xs"
+            variant="outline"
+            className="ml-auto"
+            onClick={() => props.onFix(gateFixPrompt(gates))}
+          >
+            <Wand2 />
+            Ask the agent to fix
+          </Button>
+        )}
+      </div>
+      {open === "review" && (review || reviewing) && (
+        <div className="flex flex-col gap-0.5 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+          <span className="text-muted-foreground">
+            {reviewing
+              ? `${reviewer?.label ?? "The reviewer"} is reading the changes…`
+              : `${review?.reviewer ?? ""} read the changes on its own, with no other context.`}
+          </span>
+          {review && (
+            <span className={review.verdict === "findings" ? "text-danger" : "text-foreground/90"}>
+              {review.text}
+            </span>
+          )}
+        </div>
+      )}
+      {shown && (
+        <div className="flex flex-col gap-0.5 font-mono text-[11px] leading-relaxed">
+          <span className="text-muted-foreground">{shown.detail}</span>
+          {shown.findings.map((finding) => (
+            <span
+              key={finding}
+              className={cn(
+                "whitespace-pre-wrap break-words",
+                shown.state === "fail" ? "text-danger" : "text-muted-foreground",
+              )}
+            >
+              {finding}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Live task view: the agent's todo list and every tool call during the latest reply.
 export function AgentPanel(props: {
   turn: AgentTurn;
   streaming: boolean;
   onRollback(): Promise<void>;
+  // Set when the reply ran in a project folder, so its changes can be checked.
+  projectPath?: string | null;
+  onFixGates?(prompt: string): void;
+  reviewer?: { providerId: string; modelId: string; label: string } | undefined;
 }) {
   const { turn } = props;
   const [confirming, setConfirming] = useState(false);
@@ -61,7 +255,7 @@ export function AgentPanel(props: {
   if (turn.activities.length === 0 && turn.todos.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-xs">
+    <div className="flex flex-col gap-2 border-l-2 border-border bg-muted/20 py-2 pl-3 pr-2.5 text-xs">
       {turn.todos.length > 0 && (
         <ul aria-label="Agent tasks" className="flex flex-col gap-1">
           {turn.todos.map((todo, index) => {
@@ -98,33 +292,26 @@ export function AgentPanel(props: {
 
       {turn.activities.length > 0 && (
         <details open={props.streaming} className="group/activity">
-          <summary className="cursor-pointer select-none text-muted-foreground">
+          <summary className="eyebrow cursor-pointer select-none text-muted-foreground">
             {turn.activities.length} {turn.activities.length === 1 ? "action" : "actions"}
             {changedFiles > 0 &&
               ` · ${changedFiles} file ${changedFiles === 1 ? "change" : "changes"}`}
           </summary>
-          <ol aria-label="Agent actions" className="mt-1.5 flex flex-col gap-1">
-            {turn.activities.map((activity) => {
-              const status = STATUS[activity.status];
-              return (
-                <li key={activity.id} className="flex items-start gap-2">
-                  <status.icon
-                    aria-label={status.label}
-                    className={cn("mt-0.5 size-3.5 shrink-0", status.className)}
-                  />
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-mono text-[11px] text-foreground">
-                      {activity.title}
-                    </span>
-                    {activity.detail && activity.status !== "done" && (
-                      <span className="line-clamp-2 text-muted-foreground">{activity.detail}</span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
+          <ol aria-label="Agent actions" className="mt-1.5 flex flex-col gap-1.5">
+            {turn.activities.map((activity) => (
+              <ActivityRow key={activity.id} activity={activity} />
+            ))}
           </ol>
         </details>
+      )}
+
+      {!props.streaming && props.projectPath && props.onFixGates && turn.activities.length > 0 && (
+        <GateStrip
+          key={turn.turnId}
+          projectPath={props.projectPath}
+          onFix={props.onFixGates}
+          reviewer={props.reviewer}
+        />
       )}
 
       {canUndo && !props.streaming && (

@@ -29,6 +29,13 @@ import { Button } from "./components/ui/button";
 import { formatRelativeTime, formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { PermissionCard } from "./Pane";
 import { DEFAULT_CLI_MODEL_ID, providerMeta } from "./providers";
@@ -534,8 +541,8 @@ export function RunInspector(props: {
       <div className="mx-4 mb-4 mt-4 border-t border-border pt-3">
         <p className="eyebrow text-muted-foreground">Local policy</p>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-          Edits, commands, and MCP tools ask first unless a rule in Settings → Plugins allows them.
-          Undo restores the project folder.
+          Edits, commands, and MCP tools ask first unless Settings → Guardrails allows them. Undo
+          restores the project folder.
         </p>
       </div>
     </aside>
@@ -675,19 +682,22 @@ export function BottomDock(props: {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {props.projects.length > 0 && project && (
-            <select
-              aria-label="Project folder"
-              value={project}
-              onChange={(event) => props.onProjectChange(event.target.value)}
-              className="h-7 max-w-56 cursor-pointer truncate border border-border bg-background px-1.5 font-mono text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {props.projects.map((path) => (
-                <option key={path} value={path} title={path}>
-                  {folderName(path)}
-                </option>
-              ))}
-            </select>
+          {open && props.projects.length > 0 && project && (
+            <Select value={project} onValueChange={props.onProjectChange}>
+              <SelectTrigger
+                aria-label="Project folder"
+                className="h-7 w-auto max-w-56 font-mono text-[11px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {props.projects.map((path) => (
+                  <SelectItem key={path} value={path}>
+                    <span title={path}>{folderName(path)}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <Button
             variant="ghost"
@@ -709,7 +719,14 @@ export function BottomDock(props: {
         </div>
       </div>
 
-      <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_300px]">
+      {/* The approval drawer only takes space while something is waiting, so the terminal,
+          tests, and Git get the full width the rest of the time. */}
+      <div
+        className={cn(
+          "grid min-h-0",
+          pending > 0 ? "grid-cols-[minmax(0,1fr)_300px]" : "grid-cols-1",
+        )}
+      >
         <div
           id="bottom-panel-content"
           role="tabpanel"
@@ -807,34 +824,36 @@ export function BottomDock(props: {
           )}
         </div>
 
-        <section
-          aria-label="Approval drawer"
-          className="flex min-h-0 flex-col gap-2 overflow-y-auto border-l border-border bg-background/60 p-4"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="eyebrow text-muted-foreground">Approval queue</p>
-              <p className="font-mono text-[13px]">{pending} pending</p>
+        {pending > 0 && (
+          <section
+            aria-label="Approval drawer"
+            className="flex min-h-0 flex-col gap-2 overflow-y-auto border-l border-border bg-background/60 p-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted-foreground">Approval queue</p>
+                <p className="font-mono text-[13px]">{pending} pending</p>
+              </div>
+              <span className="border border-border px-1.5 py-1 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
+                POLICY ENFORCED
+              </span>
             </div>
-            <span className="border border-border px-1.5 py-1 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
-              POLICY ENFORCED
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Consequential actions wait for your approval in the pane or here.
+            </p>
+            <div className="flex flex-col gap-0.5">
+              <span className="eyebrow text-muted-foreground">Current exact action</span>
+              <code className="break-words font-mono text-[11px] text-primary">
+                {current
+                  ? `${paneName(current.paneId)}: ${current.detail ?? current.title}`
+                  : "No action awaiting decision"}
+              </code>
+            </div>
+            <span className="mt-auto font-mono text-[10px] text-muted-foreground">
+              Session activity · {logs.length} events
             </span>
-          </div>
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Consequential actions wait for your approval in the pane or here.
-          </p>
-          <div className="flex flex-col gap-0.5">
-            <span className="eyebrow text-muted-foreground">Current exact action</span>
-            <code className="break-words font-mono text-[11px] text-primary">
-              {current
-                ? `${paneName(current.paneId)}: ${current.detail ?? current.title}`
-                : "No action awaiting decision"}
-            </code>
-          </div>
-          <span className="mt-auto font-mono text-[10px] text-muted-foreground">
-            Session activity · {logs.length} events
-          </span>
-        </section>
+          </section>
+        )}
       </div>
     </section>
   );

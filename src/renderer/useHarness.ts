@@ -45,7 +45,7 @@ const FALLBACK_PANE_DEFAULTS: PaneDefaults = { providerId: "claude-code", modelI
 export function createPane(id: string, defaults: PaneDefaults = FALLBACK_PANE_DEFAULTS): PaneState {
   return {
     id,
-    name: `Pane ${id.slice(0, 4)}`,
+    name: "Conversation",
     providerId: defaults.providerId,
     modelId: defaults.modelId,
     included: true,
@@ -134,10 +134,26 @@ export function useHarness(
   // Agent approvals waiting for the user, oldest first.
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
 
+  // A prompt written during a run waits here until the last reply ends, then goes on its own.
+  const queuedRef = useRef<{ prompt: string; images: ImageAttachment[] } | null>(null);
+  const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
+  const sendQueued = useRef(() => {});
+
   const endStream = useCallback((paneId: string) => {
     streamState.current.delete(paneId);
     setStreamingPaneIds(new Set(streamState.current.keys()));
     setPermissions((current) => current.filter((request) => request.paneId !== paneId));
+    if (streamState.current.size === 0) sendQueued.current();
+  }, []);
+
+  const queuePrompt = useCallback((prompt: string, images: ImageAttachment[]) => {
+    queuedRef.current = { prompt, images };
+    setQueuedPrompt(prompt);
+  }, []);
+
+  const cancelQueue = useCallback(() => {
+    queuedRef.current = null;
+    setQueuedPrompt(null);
   }, []);
 
   const respondPermission = useCallback((permissionId: string, optionId: string | null) => {
@@ -600,6 +616,19 @@ export function useHarness(
     for (const paneId of [...streamState.current.keys()]) abortPane(paneId);
   }, [abortPane]);
 
+  // Kept current so the end of a reply can send what was waiting, without an effect that watches
+  // the streaming set.
+  useEffect(() => {
+    sendQueued.current = () => {
+      const next = queuedRef.current;
+      const target = session.panes[0];
+      if (!next || !target) return;
+      queuedRef.current = null;
+      setQueuedPrompt(null);
+      sendToPane(target, next.prompt, next.prompt, next.images);
+    };
+  }, [session.panes, sendToPane]);
+
   return {
     session,
     setSession,
@@ -618,6 +647,9 @@ export function useHarness(
     setPersonality,
     sendPrompt,
     sendToPane,
+    queuedPrompt,
+    queuePrompt,
+    cancelQueue,
     retryPane,
     undoPane,
     branchPane,

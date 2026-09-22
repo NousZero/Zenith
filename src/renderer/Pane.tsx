@@ -1,5 +1,7 @@
 import {
   AlertCircle,
+  ArrowDown,
+  Ban,
   ArrowUp,
   Bot,
   Brain,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { denyRuleFor } from "../shared/deny-rule";
 import type { ConnectionStatus, Model, PaneState, PermissionRequest } from "../shared/types";
 import type { AgentTurn } from "./useHarness";
 import { Button } from "./components/ui/button";
@@ -108,8 +111,11 @@ function providerGroups(connections: ConnectionStatus[], currentId: string) {
 export function PermissionCard(props: {
   request: PermissionRequest;
   onRespond(optionId: string | null): void;
+  // Offered once the same thing has been denied before: deny it and write the rule.
+  onAlwaysDeny?(rule: string): void;
 }) {
   const { request } = props;
+  const rule = props.onAlwaysDeny ? denyRuleFor(request) : undefined;
   return (
     <div
       role="alertdialog"
@@ -152,6 +158,17 @@ export function PermissionCard(props: {
         {request.options.length === 0 && (
           <Button size="xs" variant="outline" onClick={() => props.onRespond(null)}>
             Dismiss
+          </Button>
+        )}
+        {rule && (
+          <Button
+            size="xs"
+            variant="outline"
+            title={`Adds "${rule}" to your rules in Settings → Guardrails.`}
+            onClick={() => props.onAlwaysDeny?.(rule)}
+          >
+            <Ban />
+            Deny and never ask again
           </Button>
         )}
       </div>
@@ -271,6 +288,8 @@ export function Pane(props: {
   streaming: boolean;
   agentTurn: AgentTurn | undefined;
   onRollback(): Promise<void>;
+  // Sends the failing checks back to this pane as the next prompt.
+  onFixGates?(prompt: string): void;
   onOpenBoard(projectPath: string): void;
   onOpenWorkspace(projectPath: string): void;
   // Name of the library agent this pane follows, or null.
@@ -283,6 +302,9 @@ export function Pane(props: {
   onCompact(): void;
   permissions: PermissionRequest[];
   onRespondPermission(permissionId: string, optionId: string | null): void;
+  // Rules for actions already denied in this session, and what to do when one is accepted.
+  deniedRules?: readonly string[];
+  onAlwaysDeny?(request: PermissionRequest, rule: string): void;
   onChange(patch: Partial<PaneState>): void;
   onRemove(): void;
   // Multiple panes are on hold: one pane per session hides broadcast, branching, and removal.
@@ -324,12 +346,29 @@ export function Pane(props: {
   const [draftName, setDraftName] = useState(pane.name);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  const [scrolledUp, setScrolledUp] = useState(false);
 
   const provider = providerMeta(pane.providerId);
   const isConfigured = connection?.state === "ready";
   const canSend = isConfigured && pane.modelId !== "";
   const modelLabel = models.find((model) => model.id === pane.modelId)?.label ?? pane.modelId;
   const replyTarget = pane.modelId === DEFAULT_CLI_MODEL_ID ? provider.label : modelLabel;
+
+  // Whoever reviews the changes should not be the connection that made them; only fall back to it
+  // when nothing else is ready.
+  // Only connections that bring their own model can be asked without choosing one first.
+  const reviewers = props.connections.filter(
+    (connection) => connection.state === "ready" && usesDefaultModel(connection.kind),
+  );
+  const reviewerConnection =
+    reviewers.find((connection) => connection.id !== pane.providerId) ?? reviewers[0];
+  const reviewer = reviewerConnection
+    ? {
+        providerId: reviewerConnection.id,
+        modelId: DEFAULT_CLI_MODEL_ID,
+        label: reviewerConnection.label,
+      }
+    : undefined;
   const lastMessage = pane.messages.at(-1);
   const lastAssistant = [...pane.messages].reverse().find((m) => m.role === "assistant");
   const awaitingReply = streaming && lastMessage?.role === "user";
@@ -376,6 +415,16 @@ export function Pane(props: {
     if (!element) return;
     stickToBottom.current =
       element.scrollHeight - element.scrollTop - element.clientHeight < STICK_TO_BOTTOM_PX;
+    setScrolledUp(!stickToBottom.current);
+  }
+
+  // Reading back through a long run scrolls away from what the agent is doing now.
+  function jumpToLatest() {
+    const element = scrollRef.current;
+    if (!element) return;
+    stickToBottom.current = true;
+    setScrolledUp(false);
+    element.scrollTop = element.scrollHeight;
   }
 
   function submitReply() {
@@ -719,194 +768,234 @@ export function Pane(props: {
         </DropdownMenu>
       </header>
 
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
-      >
-        {pane.messages.length === 0 && pane.lastError === null ? (
-          !isConfigured ? (
-            <NotReadyState
-              label={provider.label}
-              connection={connection}
-              onOpenSettings={props.onOpenSettings}
-            />
-          ) : pane.modelId === "" ? (
-            <EmptyState
-              icon={Sparkles}
-              title="Pick a model"
-              description="Choose a model from the header to start this conversation."
-            />
-          ) : props.singlePane ? (
-            <div className="flex h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
-              <span
-                aria-hidden
-                className="grid size-12 place-items-center border border-primary/70 font-serif text-xl text-primary"
-              >
-                Z
-              </span>
-              <p className="font-serif text-2xl text-foreground">What are we working on?</p>
-              <ul className="flex max-w-md flex-col gap-2 text-left text-xs text-muted-foreground">
-                <li className="flex items-baseline gap-2.5">
-                  <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
-                    /
-                  </kbd>
-                  Run a skill or command, or type /help for everything Zenith can do.
-                </li>
-                <li className="flex items-baseline gap-2.5">
-                  <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
-                    {navigator.userAgent.includes("Mac") ? "⌘K" : "Ctrl K"}
-                  </kbd>
-                  Search or ask about every past session.
-                </li>
-                <li className="flex items-baseline gap-2.5">
-                  <span className="flex w-9 shrink-0 translate-y-0.5 justify-center">
-                    <FolderOpen className="size-3.5 text-primary" aria-hidden />
-                  </span>
-                  Choose a project folder above so agents can read and change its files, with your
-                  approval.
-                </li>
-              </ul>
-            </div>
-          ) : (
-            <EmptyState
-              icon={MessageSquare}
-              title="Ready"
-              description="Send from the composer to every included pane, or use the reply button below to message only this one."
-            />
-          )
-        ) : (
-          <div className="flex flex-col gap-4">
-            {pane.messages.map((message, index) =>
-              message.role === "user" ? (
-                <div
-                  key={message.id}
-                  className="flex max-w-full flex-col gap-2 self-end whitespace-pre-wrap break-words rounded-lg bg-secondary px-3.5 py-2 text-[13px] leading-relaxed text-secondary-foreground"
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {scrolledUp && (
+          <Button
+            size="xs"
+            variant="secondary"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 shadow-lg shadow-black/30"
+          >
+            <ArrowDown />
+            Jump to latest
+          </Button>
+        )}
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        >
+          {pane.messages.length === 0 && pane.lastError === null ? (
+            !isConfigured ? (
+              <NotReadyState
+                label={provider.label}
+                connection={connection}
+                onOpenSettings={props.onOpenSettings}
+              />
+            ) : pane.modelId === "" ? (
+              <EmptyState
+                icon={Sparkles}
+                title="Pick a model"
+                description="Choose a model from the header to start this conversation."
+              />
+            ) : props.singlePane ? (
+              <div className="flex h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
+                <span
+                  aria-hidden
+                  className="grid size-12 place-items-center border border-primary/70 font-serif text-xl text-primary"
                 >
-                  {message.images?.length ? (
-                    <span className="flex flex-wrap justify-end gap-1.5">
-                      {message.images.map((image) => (
-                        <AttachmentImage
-                          key={image.id}
-                          id={image.id}
-                          className="max-h-40 max-w-60 border border-border object-contain"
-                        />
-                      ))}
-                    </span>
-                  ) : null}
-                  {message.content}
-                </div>
-              ) : message.role === "assistant" ? (
-                <div key={message.id} className="group">
-                  <Markdown content={message.content} />
-                  {!(streaming && index === pane.messages.length - 1) && (
-                    <MessageActions
-                      content={message.content}
-                      isLast={index === pane.messages.length - 1}
-                      onBranch={() => props.onBranch(message.id)}
-                      branchLabel={
-                        props.singlePane ? "Branch into new session" : "Branch into new pane"
-                      }
-                      onRetry={onRetry}
-                      onUndo={props.onUndo}
-                      onRemember={() => props.onRemember(message.content)}
-                      {...(props.onSaveSkill
-                        ? { onSaveSkill: () => props.onSaveSkill?.(message.id) }
-                        : {})}
-                    />
-                  )}
-                </div>
-              ) : (
-                <details
-                  key={message.id}
-                  className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px]"
-                >
-                  <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
-                    Summary of earlier messages
-                  </summary>
-                  <div className="mt-2">
-                    <Markdown content={message.content} />
-                  </div>
-                </details>
-              ),
-            )}
-
-            {pane.planMode && !streaming && lastMessage?.role === "assistant" && (
-              <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
-                <ClipboardList className="size-4 shrink-0 text-warning" aria-hidden />
-                <span className="flex-1 text-foreground">
-                  Plan mode is on, so nothing was changed.
+                  Z
                 </span>
-                <Button size="xs" onClick={props.onBuildPlan}>
-                  Build this plan
-                </Button>
+                <p className="font-serif text-2xl text-foreground">What are we working on?</p>
+                <ul className="flex max-w-md flex-col gap-2 text-left text-xs text-muted-foreground">
+                  <li className="flex items-baseline gap-2.5">
+                    <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
+                      /
+                    </kbd>
+                    Run a skill or command, or type /help for everything Zenith can do.
+                  </li>
+                  <li className="flex items-baseline gap-2.5">
+                    <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
+                      {navigator.userAgent.includes("Mac") ? "⌘K" : "Ctrl K"}
+                    </kbd>
+                    Search or ask about every past session.
+                  </li>
+                  <li className="flex items-baseline gap-2.5">
+                    <span className="flex w-9 shrink-0 translate-y-0.5 justify-center">
+                      <FolderOpen className="size-3.5 text-primary" aria-hidden />
+                    </span>
+                    {pane.projectPath
+                      ? `Working in ${folderName(pane.projectPath)}. Agents read it freely and ask before every change.`
+                      : "Choose a project folder above so agents can read and change its files, with your approval."}
+                  </li>
+                </ul>
               </div>
-            )}
-
-            {props.agentTurn && (
-              <AgentPanel
-                turn={props.agentTurn}
-                streaming={streaming}
-                onRollback={props.onRollback}
+            ) : (
+              <EmptyState
+                icon={MessageSquare}
+                title="Ready"
+                description="Send from the composer to every included pane, or use the reply button below to message only this one."
               />
-            )}
-
-            {compacting && (
-              <p role="status" className="text-xs text-muted-foreground motion-safe:animate-pulse">
-                Compacting earlier messages…
-              </p>
-            )}
-
-            {props.permissions.map((request) => (
-              <PermissionCard
-                key={request.permissionId}
-                request={request}
-                onRespond={(optionId) => props.onRespondPermission(request.permissionId, optionId)}
-              />
-            ))}
-
-            {awaitingReply && props.permissions.length === 0 && (
-              <div
-                className="flex items-center gap-1.5 py-1"
-                role="status"
-                aria-label="Waiting for reply"
-              >
-                {[0, 1, 2].map((dot) => (
-                  <span
-                    key={dot}
-                    className={cn("size-1.5 rounded-full animate-typing", provider.dotClass)}
-                    style={{ animationDelay: `${dot * 160}ms` }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {pane.lastError !== null && (
-              <div
-                role="alert"
-                className="flex gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 p-3"
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
-                  <p className="text-[13px] leading-relaxed text-foreground">{pane.lastError}</p>
-                  <div className="flex gap-1.5">
-                    {missingKeyError ? (
-                      <Button size="xs" variant="outline" onClick={props.onOpenSettings}>
-                        <KeyRound />
-                        Add API key
-                      </Button>
-                    ) : (
-                      <Button size="xs" variant="outline" onClick={onRetry}>
-                        <RotateCcw />
-                        Retry
-                      </Button>
+            )
+          ) : (
+            <div className="flex flex-col gap-4">
+              {pane.messages.map((message, index) =>
+                message.role === "user" ? (
+                  // The prompt stays in the scrollback as its own band, the way a shell keeps the
+                  // command you typed above its output.
+                  <div
+                    key={message.id}
+                    className="flex max-w-full gap-2.5 border-l-2 border-primary/60 bg-secondary/40 py-1.5 pl-2.5 pr-3 text-[13px] leading-relaxed text-foreground"
+                  >
+                    <span aria-hidden className="select-none font-mono text-primary">
+                      ❯
+                    </span>
+                    <div className="flex min-w-0 flex-col gap-2">
+                      {message.images?.length ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          {message.images.map((image) => (
+                            <AttachmentImage
+                              key={image.id}
+                              id={image.id}
+                              className="max-h-40 max-w-60 border border-border object-contain"
+                            />
+                          ))}
+                        </span>
+                      ) : null}
+                      <span className="whitespace-pre-wrap break-words">{message.content}</span>
+                    </div>
+                  </div>
+                ) : message.role === "assistant" ? (
+                  <div key={message.id} className="group flex flex-col gap-1.5">
+                    {/* Who answered, so a transcript read later names the connection itself. */}
+                    <span className="eyebrow flex items-center gap-1.5 text-muted-foreground">
+                      <span
+                        className={cn("size-1.5 rounded-full", provider.dotClass)}
+                        aria-hidden
+                      />
+                      {provider.label}
+                    </span>
+                    <Markdown content={message.content} />
+                    {!(streaming && index === pane.messages.length - 1) && (
+                      <MessageActions
+                        content={message.content}
+                        isLast={index === pane.messages.length - 1}
+                        onBranch={() => props.onBranch(message.id)}
+                        branchLabel={
+                          props.singlePane ? "Branch into new session" : "Branch into new pane"
+                        }
+                        onRetry={onRetry}
+                        onUndo={props.onUndo}
+                        onRemember={() => props.onRemember(message.content)}
+                        {...(props.onSaveSkill
+                          ? { onSaveSkill: () => props.onSaveSkill?.(message.id) }
+                          : {})}
+                      />
                     )}
                   </div>
+                ) : (
+                  <details
+                    key={message.id}
+                    className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px]"
+                  >
+                    <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+                      Summary of earlier messages
+                    </summary>
+                    <div className="mt-2">
+                      <Markdown content={message.content} />
+                    </div>
+                  </details>
+                ),
+              )}
+
+              {pane.planMode && !streaming && lastMessage?.role === "assistant" && (
+                <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs">
+                  <ClipboardList className="size-4 shrink-0 text-warning" aria-hidden />
+                  <span className="flex-1 text-foreground">
+                    Plan mode is on, so nothing was changed.
+                  </span>
+                  <Button size="xs" onClick={props.onBuildPlan}>
+                    Build this plan
+                  </Button>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+
+              {props.agentTurn && (
+                <AgentPanel
+                  turn={props.agentTurn}
+                  streaming={streaming}
+                  onRollback={props.onRollback}
+                  projectPath={pane.projectPath}
+                  {...(props.onFixGates ? { onFixGates: props.onFixGates } : {})}
+                  reviewer={reviewer}
+                />
+              )}
+
+              {compacting && (
+                <p
+                  role="status"
+                  className="text-xs text-muted-foreground motion-safe:animate-pulse"
+                >
+                  Compacting earlier messages…
+                </p>
+              )}
+
+              {props.permissions.map((request) => (
+                <PermissionCard
+                  key={request.permissionId}
+                  request={request}
+                  onRespond={(optionId) =>
+                    props.onRespondPermission(request.permissionId, optionId)
+                  }
+                  {...(props.onAlwaysDeny && props.deniedRules?.includes(denyRuleFor(request) ?? "")
+                    ? { onAlwaysDeny: (rule: string) => props.onAlwaysDeny?.(request, rule) }
+                    : {})}
+                />
+              ))}
+
+              {awaitingReply && props.permissions.length === 0 && (
+                <div
+                  className="flex items-center gap-1.5 py-1"
+                  role="status"
+                  aria-label="Waiting for reply"
+                >
+                  {[0, 1, 2].map((dot) => (
+                    <span
+                      key={dot}
+                      className={cn("size-1.5 rounded-full animate-typing", provider.dotClass)}
+                      style={{ animationDelay: `${dot * 160}ms` }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {pane.lastError !== null && (
+                <div
+                  role="alert"
+                  className="flex gap-2.5 rounded-lg border border-destructive/40 bg-destructive/10 p-3"
+                >
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <p className="text-[13px] leading-relaxed text-foreground">{pane.lastError}</p>
+                    <div className="flex gap-1.5">
+                      {missingKeyError ? (
+                        <Button size="xs" variant="outline" onClick={props.onOpenSettings}>
+                          <KeyRound />
+                          Add API key
+                        </Button>
+                      ) : (
+                        <Button size="xs" variant="outline" onClick={onRetry}>
+                          <RotateCcw />
+                          Retry
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <footer className="shrink-0 border-t border-border p-2">

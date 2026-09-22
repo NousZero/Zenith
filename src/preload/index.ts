@@ -7,6 +7,7 @@ import type {
   ChatChunk,
   BoardCard,
   BoardStatus,
+  GateResult,
   GitStatus,
   GitWorktree,
   WorkspaceEntry,
@@ -18,6 +19,7 @@ import type {
   ImageAttachment,
   SandboxStatus,
   PermissionRequest,
+  ReviewResult,
   ScheduledTask,
   SemanticStatus,
   PersonaFile,
@@ -197,6 +199,15 @@ const zenithApi: ZenithApi = {
   sandbox: {
     status: (): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:status"),
     set: (enabled: boolean): Promise<SandboxStatus> => ipcRenderer.invoke("sandbox:set", enabled),
+  },
+  gates: {
+    run: (projectPath: string): Promise<GateResult[]> =>
+      ipcRenderer.invoke("gates:run", projectPath),
+    review: (input: {
+      projectPath: string;
+      providerId: string;
+      modelId: string;
+    }): Promise<ReviewResult> => ipcRenderer.invoke("gates:review", input),
   },
   permissions: {
     get: (): Promise<string> => ipcRenderer.invoke("permissions:get"),

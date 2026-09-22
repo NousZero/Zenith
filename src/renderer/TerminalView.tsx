@@ -52,7 +52,7 @@ export function TerminalView(props: { projectPath: string }) {
       cursorBlink: true,
       fontFamily:
         'Cascadia Code, "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace',
-      fontSize: 12,
+      fontSize: 13,
       theme: terminalTheme(),
       scrollback: 10_000,
     });

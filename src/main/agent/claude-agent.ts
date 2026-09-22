@@ -195,11 +195,15 @@ export async function permissionPrompt(
     { id: "deny", label: "Deny", kind: "reject_once" },
   ];
   const title = describeToolUse(tool, input, projectPath);
+  // The same text a rule is matched against, so "never ask again" writes a rule that works.
+  const subject = ruleSubject(tool, input, projectPath);
+  const names = { tool, ...(subject ? { subject } : {}) };
   if (FILE_TOOLS.has(tool)) {
     const filePath = text(input["file_path"]);
     const before = await readFile(filePath, "utf8").catch(() => "");
     const after = proposedContent(tool, input, before) ?? before;
     return {
+      ...names,
       title,
       options,
       diff: unifiedDiff(before, after, displayPath(projectPath, filePath)),
@@ -210,6 +214,7 @@ export async function permissionPrompt(
   }
   if (tool === "Bash") {
     return {
+      ...names,
       title: "Run a command",
       options,
       detail: text(input["command"]),

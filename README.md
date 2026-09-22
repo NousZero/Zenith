@@ -42,7 +42,10 @@ Point a conversation at a folder and the model becomes an agent that can read an
 - **Sandboxed commands (optional):** agent commands run in the operating system's sandbox (macOS
   Seatbelt, Linux bubblewrap) with no network and writes only inside the project, so they don't
   need to ask. Leaving the sandbox always asks.
-- **Permission rules** decide what runs without asking: `allow Bash npm test*`, `deny Read *.env`,
+- **Guardrails in one choice:** Locked down, Standard or Open in **Settings → Guardrails** sets
+  every rule; the composer names the one in force before you send. All three refuse to read
+  `.env`, keys and `id_rsa*`.
+- **Permission rules** for anything finer: `allow Bash npm test*`, `deny Read *.env`,
   `ask Edit src/*`. An allow rule never matches a chained shell command.
 - **Undo** restores the project folder from a snapshot taken before the reply, so changes made by
   commands are covered too.
@@ -52,12 +55,26 @@ Point a conversation at a folder and the model becomes an agent that can read an
 
 ### See what's happening
 
+- **Transcript that reads like a terminal:** your prompt keeps its own `❯` band, each tool call is
+  one line (`Run`, then `└ $ npm test`, then the result under `⎿`, red when it failed), and the
+  reply says which connection wrote it.
+- **Before you send:** the composer states which connection answers, which folder it may touch, and
+  how much it may do without asking. While a reply runs it says what the agent is doing right now.
+- **Queue a prompt:** type during a run and it waits as a cancellable chip, then goes on its own as
+  soon as the reply ends.
 - **Bottom dock:** a real terminal (your own shell in a pseudo-terminal, so `vim`, `less` and
   colors work), Tests (finds `npm test`, `cargo test`, `go test`, pytest), Git status, diffs,
   commits and worktrees, Logs of every tool call, and the Approvals queue.
 - **Files page:** a project tree with a Markdown reading view, and previews of web pages and
   images at full, tablet or phone width. Previews run offline: a page can load files from the
   project and reach nothing else.
+- **Checks after a reply:** when an agent changes files, Zenith checks them for leaked keys, for
+  errors the project's language server reports, and for how far the change spread — then hands the
+  findings back to the agent in one click.
+- **A second opinion:** ask a _different_ connection to review the changes for security problems,
+  with the patch and nothing else. One request, only when you click.
+- **Deny twice, write the rule:** the second time you refuse the same action, the card offers to
+  save it as a rule so it never asks again.
 - **Run inspector:** soul, role, agent, skills, project, mode, context use and the task list for
   the current conversation.
 - **What the model saw:** every part of the last request — instructions, project files, tool

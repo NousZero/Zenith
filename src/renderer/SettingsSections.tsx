@@ -15,7 +15,7 @@ import {
   type CustomProvider,
   type ProviderApi,
 } from "../shared/custom-providers";
-import { PERMISSION_RULES_EXAMPLE } from "../shared/permissions";
+import { PERMISSION_RULES_EXAMPLE, POSTURES, postureOf, type Posture } from "../shared/permissions";
 import type { ConnectionStatus, PersonaFile, SandboxStatus } from "../shared/types";
 import { Button } from "./components/ui/button";
 import { Switch } from "./components/ui/switch";
@@ -630,17 +630,93 @@ export function McpSection() {
   );
 }
 
-export function PermissionsSection() {
+export function PermissionsSection(props: { onChanged?: () => void }) {
+  const [rules, setRules] = useState<string | null>(null);
+  // Bumped after a posture is chosen, so the rules editor below reloads with the new text.
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.zenith.permissions
+      .get()
+      .then((text) => {
+        if (!cancelled) setRules(text);
+      })
+      .catch((error: unknown) => console.error("Failed to read the permission rules:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [version]);
+
+  const current = rules === null ? undefined : postureOf(rules);
+  const hasOwnRules = rules !== null && current === undefined && rules.trim() !== "";
+
+  async function choose(posture: Posture) {
+    const error = await window.zenith.permissions.set(posture.rules);
+    if (error) {
+      console.error("Failed to save the permission rules:", error);
+      return;
+    }
+    setVersion((value) => value + 1);
+    props.onChanged?.();
+  }
+
   return (
-    <Section title="Agent permissions">
-      <TextSettingEditor
-        store={window.zenith.permissions}
-        label="Agent permission rules"
-        description={
-          'One rule per line: allow, ask, or deny, a tool name (Read, Edit, Write, Bash, mcp__server__tool; * for any), and an optional pattern for the command or path, where * matches anything. The last matching rule wins. "allow Bash" never matches commands that chain or redirect with ; & | $ < >. Applies to Claude Code and Zenith\'s own agent.'
-        }
-        placeholder={PERMISSION_RULES_EXAMPLE}
-      />
+    <Section title="How much agents may do">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        One choice sets every rule. Whatever you pick, anything outside the project folder still
+        asks, and edits show a diff before they happen.
+      </p>
+      <ul className="grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]">
+        {POSTURES.map((posture) => {
+          const active = current?.id === posture.id;
+          return (
+            <li key={posture.id}>
+              <button
+                type="button"
+                aria-pressed={active}
+                disabled={rules === null}
+                onClick={() => void choose(posture)}
+                className={cn(
+                  "flex h-full w-full cursor-pointer flex-col gap-1.5 border bg-card p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  active
+                    ? "border-primary/60 bg-primary/[0.06]"
+                    : "border-border hover:border-input",
+                )}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{posture.label}</span>
+                  {active && <span className="eyebrow text-primary">In use</span>}
+                </span>
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  {posture.summary}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {hasOwnRules && (
+        <p className="text-xs text-muted-foreground">
+          Your rules don&apos;t match any of these. Choosing one replaces them.
+        </p>
+      )}
+      <details className="border-t border-border pt-3">
+        <summary className="cursor-pointer select-none text-xs text-muted-foreground">
+          Write the rules yourself
+        </summary>
+        <div className="mt-2.5">
+          <TextSettingEditor
+            key={version}
+            store={window.zenith.permissions}
+            label="Agent permission rules"
+            description={
+              'One rule per line: allow, ask, or deny, a tool name (Read, Edit, Write, Bash, mcp__server__tool; * for any), and an optional pattern for the command or path, where * matches anything. The last matching rule wins. "allow Bash" never matches commands that chain or redirect with ; & | $ < >. Applies to Claude Code and Zenith\'s own agent.'
+            }
+            placeholder={PERMISSION_RULES_EXAMPLE}
+          />
+        </div>
+      </details>
     </Section>
   );
 }

@@ -57,15 +57,24 @@ are already on the computer.
 - **Transparency:** "What the model saw" shows every part of the last request with token counts.
 - **Conversation extras:** pasted images, branching into a new session, Markdown and HTML export,
   and saving a reply as a skill.
+- **Reading a run:** prompts, tool calls and results are laid out like terminal output; the composer
+  states what a send will do and what the current run is doing; a prompt written during a run is
+  queued rather than refused.
 - **Conversation:** one pane per session, with a project folder, plan mode, compaction, retry,
   undo, session memory and named sessions.
 - **Agents:** Zenith's own tool-calling loop (`Read`, `Glob`, `Grep`, `Edit`, `Write`, `Bash`,
   `TodoWrite`, `Remember`, `Task`), Claude Code agent mode driven through Zenith's approvals, and
   MCP tools from `mcp.json`.
-- **Safety:** approval cards with diffs and command previews, permission rules
+- **Safety:** three guardrail postures (Locked down, Standard, Open) that write the whole rule set
+  in one click, approval cards with diffs and command previews, permission rules
   (`allow|ask|deny <tool> [pattern]`), real-path checks so symbolic links can't leave the project,
   Git-based snapshots and undo, per-file checkpoints as a fallback, and optional operating-system
   sandboxing of agent commands (macOS Seatbelt, Linux bubblewrap).
+- **Second opinion:** one request asking another connection to review the current patch for
+  security problems, with no other context.
+- **Checks:** after a reply that changed files — leaked secrets, language-server errors, and how
+  far the change spread — with one click to send the findings back to the agent; denying the same
+  action twice offers to save it as a rule.
 - **Code intelligence:** formatters after edits (Biome, Prettier, gofmt, rustfmt, Ruff) and
   language-server errors (TypeScript 7's own server, typescript-language-server, Pyright, gopls,
   rust-analyzer) fed back to the model.

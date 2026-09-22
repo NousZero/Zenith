@@ -17,7 +17,9 @@ import { homedir } from "node:os";
 import { createAcpAdapter } from "./acp/acp-adapter";
 import { runClaudeAgent } from "./agent/claude-agent";
 import { formatFile } from "./agent/format";
-import { createLanguageServers } from "./agent/lsp";
+import { createLanguageServers, servedByLanguageServer } from "./agent/lsp";
+import { runGates } from "./gates";
+import { collectDiff, REVIEW_SYSTEM, reviewPrompt, reviewVerdict } from "./review";
 import { createMcpTools } from "./agent/mcp-client";
 import { anthropicModel, openAiCompatibleModel, type ToolModel } from "./agent/models";
 import { runNativeAgent } from "./agent/native-agent";
@@ -91,6 +93,7 @@ import type {
   SendMessageRequest,
   PermissionPrompt,
   PermissionRequest,
+  ReviewResult,
   SessionState,
 } from "../shared/types";
 
@@ -402,12 +405,15 @@ export function registerIpcHandlers(options: {
     ),
   );
   // Gemini CLI and Copilot CLI chat read-only, and work as ACP agents in a project folder.
+  // Their ACP adapters are kept apart from agentAdapters: both carry the same id, and the
+  // registry keeps the last adapter registered for an id, which would send plain chat to ACP too.
+  const cliAcpAdapters: typeof agentAdapters = [];
   const cliAgent = (chat: ProviderAdapter, id: keyof typeof CLI_AGENT_ARGS, label: string) => {
     const agent = createAcpAdapter(
       { id, label, args: [...CLI_AGENT_ARGS[id]] },
       acpDeps(CLI_BINARIES[id]),
     );
-    agentAdapters.push(agent);
+    cliAcpAdapters.push(agent);
     return {
       ...chat,
       sendMessage: (request: SendMessageRequest) =>
@@ -741,6 +747,48 @@ export function registerIpcHandlers(options: {
     }),
   );
   handle("library:remove", async (_event, path: unknown) => library.remove(String(path)));
+  // A second opinion on the current changes: one plain chat request to another connection, with
+  // the patch and nothing else — no project folder, so the reviewer gets no tools.
+  handle(
+    "gates:review",
+    async (
+      _event,
+      payload: { projectPath: unknown; providerId: unknown; modelId: unknown },
+    ): Promise<ReviewResult> => {
+      const projectPath = await projectArg(payload.projectPath);
+      const providerId = String(payload.providerId);
+      const diff = await collectDiff(git, projectPath);
+      const reviewer =
+        (await listConnections(false)).find((connection) => connection.id === providerId)?.label ??
+        providerId;
+      if (diff.trim() === "") {
+        return { verdict: "clean", reviewer, text: "Nothing has changed since the last commit." };
+      }
+      let text = "";
+      for await (const chunk of registry.get(providerId).sendMessage({
+        model: String(payload.modelId),
+        messages: [
+          { role: "system", content: REVIEW_SYSTEM },
+          { role: "user", content: reviewPrompt(diff) },
+        ],
+      })) {
+        text += chunk.delta;
+      }
+      return { verdict: reviewVerdict(text), reviewer, text: text.trim() };
+    },
+  );
+
+  // Checks over what the project folder now holds, run when a reply that could change files ends.
+  handle("gates:run", async (_event, projectPath: unknown) =>
+    runGates(
+      {
+        gitStatus: (path) => gitWorkspace.status(path),
+        problems: (root, filePath, text) => languageServers.problems(root, filePath, text),
+        served: (filePath) => servedByLanguageServer(filePath),
+      },
+      await projectArg(projectPath),
+    ),
+  );
   handle("sandbox:status", async () => {
     const kind = await availableSandbox();
     return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
@@ -1110,7 +1158,7 @@ export function registerIpcHandlers(options: {
     dispose(): void {
       for (const controller of activeRequests.values()) controller.abort();
       activeRequests.clear();
-      for (const adapter of agentAdapters) adapter.dispose();
+      for (const adapter of [...agentAdapters, ...cliAcpAdapters]) adapter.dispose();
       mcpTools.dispose();
       languageServers.dispose();
       bots.stopAll();
