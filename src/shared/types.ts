@@ -448,6 +448,9 @@ export interface ZenithApi {
     ): () => void;
   };
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
+  screen: {
+    capture(): Promise<ImageAttachment>;
+  };
   goals: {
     list(): Promise<Goal[]>;
     create(input: GoalInput): Promise<Goal>;

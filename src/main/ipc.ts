@@ -38,6 +38,7 @@ import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git"
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
 import { createGoalsStore } from "./goals-store";
+import { createScreen } from "./screen";
 import { createPtyTerminals } from "./pty-terminal";
 import { createVoice } from "./voice";
 import {
@@ -179,6 +180,7 @@ export function registerIpcHandlers(options: {
     closed: (id) => sendToWindows("browser:closed", { id }),
   });
   const goals = createGoalsStore(db);
+  const screenCapture = createScreen();
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
   const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
   const customProviders = createCustomProviderStore(
@@ -819,6 +821,12 @@ export function registerIpcHandlers(options: {
     const kind = await availableSandbox();
     return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
   });
+  // The user presses the button; the capture is attached to the message they are writing.
+  handle("screen:capture", async () => {
+    const shot = await screenCapture.capture();
+    return attachments.save("image/png", shot.base64);
+  });
+
   handle("goals:list", async () => goals.list());
   handle("goals:create", async (_event, input: unknown) => goals.create(input as GoalInput));
   handle("goals:update", async (_event, payload: { id: unknown; input: unknown }) =>

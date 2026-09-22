@@ -1,4 +1,14 @@
-import { ArrowUp, Clock, FolderOpen, ImagePlus, Mic, ShieldCheck, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  Clock,
+  FolderOpen,
+  ImagePlus,
+  Mic,
+  Monitor,
+  ShieldCheck,
+  Square,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
@@ -123,6 +133,30 @@ export function Composer(props: {
           ),
         );
       }
+    }
+  }
+
+  async function attachScreenshot() {
+    setImageError("");
+    if (images.length >= MAX_IMAGES_PER_MESSAGE) {
+      setImageError(`Up to ${MAX_IMAGES_PER_MESSAGE} images per message.`);
+      return;
+    }
+    try {
+      const ref = await window.zenith.screen.capture();
+      const data = await window.zenith.attachments.read(ref.id);
+      setImages((current) =>
+        current.some((item) => item.ref.id === ref.id)
+          ? current
+          : [...current, { ref, url: `data:image/png;base64,${data}` }],
+      );
+    } catch (error: unknown) {
+      setImageError(
+        (error instanceof Error ? error.message : String(error)).replace(
+          /^Error invoking remote method '[^']+': (?:Error: )?/,
+          "",
+        ),
+      );
     }
   }
 
@@ -430,6 +464,15 @@ export function Composer(props: {
             onClick={() => fileRef.current?.click()}
           >
             <ImagePlus />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Attach a screenshot"
+            title="Attach a picture of your screen"
+            onClick={() => void attachScreenshot()}
+          >
+            <Monitor />
           </Button>
           <Button
             size="icon-sm"

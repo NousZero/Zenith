@@ -159,6 +159,9 @@ const zenithApi: ZenithApi = {
       return () => ipcRenderer.removeListener("workspace:output", handler);
     },
   },
+  screen: {
+    capture: (): Promise<ImageAttachment> => ipcRenderer.invoke("screen:capture"),
+  },
   goals: {
     list: (): Promise<Goal[]> => ipcRenderer.invoke("goals:list"),
     create: (input: GoalInput): Promise<Goal> => ipcRenderer.invoke("goals:create", input),
