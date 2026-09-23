@@ -772,40 +772,42 @@ export function App() {
     automation: "Bots, scheduled tasks, and usage insights.",
   };
 
+  const sessionTitle = (
+    <input
+      aria-label="Session name"
+      value={session.name}
+      onChange={(event) => setSession((current) => ({ ...current, name: event.target.value }))}
+      onBlur={() => {
+        if (session.name.trim() === "") {
+          setSession((current) => ({ ...current, name: UNTITLED_SESSION }));
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      className="w-[22rem] max-w-full truncate border border-transparent bg-transparent px-1 py-0.5 font-sans text-[13px] tracking-normal text-foreground normal-case transition-colors hover:border-border focus:border-ring focus:outline-none"
+    />
+  );
+  const sessionActions = (
+    <>
+      <span className="mr-2 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
+        {formatTokens(totalTokens)} TOKENS
+        {session.personalityId
+          ? ` · ${(PERSONALITIES.find((item) => item.id === session.personalityId)?.label ?? session.personalityId).toUpperCase()}`
+          : ""}
+      </span>
+      <MemoryPopover
+        memoryText={session.memoryText}
+        enabledPaneCount={memoryPaneCount}
+        paneCount={session.panes.length}
+        onChange={setMemoryText}
+      />
+      <span aria-hidden className="mx-2 h-4 w-px bg-border" />
+    </>
+  );
+
   const workspaceView = (
     <>
-      <PageHeader
-        compact
-        eyebrow="Session"
-        title={
-          <input
-            aria-label="Session name"
-            value={session.name}
-            onChange={(event) =>
-              setSession((current) => ({ ...current, name: event.target.value }))
-            }
-            onBlur={() => {
-              if (session.name.trim() === "") {
-                setSession((current) => ({ ...current, name: UNTITLED_SESSION }));
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            className="w-full max-w-[28rem] border border-transparent bg-transparent px-1 font-serif text-lg text-foreground transition-colors hover:border-border focus:border-ring focus:outline-none"
-          />
-        }
-        description={`${formatTokens(totalTokens)} tokens${session.personalityId ? ` · role: ${PERSONALITIES.find((item) => item.id === session.personalityId)?.label ?? session.personalityId}` : ""}`}
-        actions={
-          <MemoryPopover
-            memoryText={session.memoryText}
-            enabledPaneCount={memoryPaneCount}
-            paneCount={session.panes.length}
-            onChange={setMemoryText}
-          />
-        }
-      />
-
       <div className="min-h-0 flex-1 bg-background">
         {pane ? (
           <Pane
@@ -1083,6 +1085,8 @@ export function App() {
           dockOpen={dockOpen}
           onToggleDock={() => setDockOpen((open) => !open)}
           pendingCount={pendingCount}
+          title={activity === "workspace" ? sessionTitle : undefined}
+          actions={activity === "workspace" ? sessionActions : undefined}
           inspector={
             <RunInspector
               pane={pane}
