@@ -16,7 +16,7 @@ import {
   type ProviderApi,
 } from "../shared/custom-providers";
 import { PERMISSION_RULES_EXAMPLE, POSTURES, postureOf, type Posture } from "../shared/permissions";
-import type { ConnectionStatus, PersonaFile, SandboxStatus } from "../shared/types";
+import type { AuditEntry, ConnectionStatus, PersonaFile, SandboxStatus } from "../shared/types";
 import { Button } from "./components/ui/button";
 import { Switch } from "./components/ui/switch";
 import { Textarea } from "./components/ui/textarea";
@@ -567,6 +567,95 @@ export function AppearanceSection() {
           </li>
         ))}
       </ul>
+    </Section>
+  );
+}
+
+const AUDIT_KIND_LABEL: Record<AuditEntry["kind"], string> = {
+  approval: "Approval",
+  command: "Command",
+  edit: "Edit",
+  rollback: "Undo",
+  gate: "Checks",
+};
+
+const AUDIT_BAD_OUTCOMES = new Set(["failed", "denied", "fail", "reject_once", "reject_always"]);
+
+// Read-only record of what agents did and what was decided, newest first.
+export function AuditSection() {
+  const [entries, setEntries] = useState<AuditEntry[] | null>(null);
+  const load = () =>
+    window.zenith.audit
+      .list(200)
+      .then(setEntries)
+      .catch(() => setEntries([]));
+  useEffect(() => {
+    let cancelled = false;
+    window.zenith.audit
+      .list(200)
+      .then((items) => {
+        if (!cancelled) setEntries(items);
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Section
+      title="Activity record"
+      actions={
+        <Button size="xs" variant="ghost" onClick={() => void load()}>
+          Refresh
+        </Button>
+      }
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Every approval you answered, command an agent ran, file it changed, undo, and check, kept on
+        this computer after the conversation is gone. Keys and passwords are masked before they are
+        written; the newest 5,000 entries are kept.
+      </p>
+      {entries && entries.length === 0 && (
+        <p className="text-xs text-muted-foreground">Nothing recorded yet.</p>
+      )}
+      {entries && entries.length > 0 && (
+        <ol
+          aria-label="Activity record"
+          className="max-h-80 overflow-y-auto border border-border font-mono text-[11px]"
+        >
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="grid grid-cols-[7.5rem_4.5rem_minmax(0,1fr)_auto] items-baseline gap-3 border-b border-border px-3 py-1.5 last:border-b-0"
+            >
+              <time className="text-muted-foreground" dateTime={new Date(entry.at).toISOString()}>
+                {new Date(entry.at).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </time>
+              <span className="uppercase tracking-[0.06em] text-muted-foreground">
+                {AUDIT_KIND_LABEL[entry.kind]}
+              </span>
+              <span className="truncate" title={entry.projectPath ?? undefined}>
+                {entry.summary}
+              </span>
+              <span
+                className={
+                  AUDIT_BAD_OUTCOMES.has(entry.outcome) ? "text-danger" : "text-muted-foreground"
+                }
+              >
+                {entry.outcome.replace(/_/g, " ")}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </Section>
   );
 }

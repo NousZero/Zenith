@@ -37,6 +37,7 @@ import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
+import { createAuditLog } from "./audit-log";
 import { createGoalsStore } from "./goals-store";
 import { createScreen } from "./screen";
 import { createPtyTerminals } from "./pty-terminal";
@@ -180,6 +181,15 @@ export function registerIpcHandlers(options: {
     closed: (id) => sendToWindows("browser:closed", { id }),
   });
   const goals = createGoalsStore(db);
+  const audit = createAuditLog(db);
+  // An audit write must never break the action it records.
+  const auditRecord = (entry: Parameters<typeof audit.record>[0]) => {
+    try {
+      audit.record(entry);
+    } catch (error: unknown) {
+      console.error("Audit log write failed:", error);
+    }
+  };
   const screenCapture = createScreen();
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
   const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
@@ -652,12 +662,21 @@ export function registerIpcHandlers(options: {
   // are the fallback when Git is missing or the snapshot failed.
   handle("agent:rollback", async (_event, turnId: unknown) => {
     if (typeof turnId !== "string") return [];
+    let restored: string[];
     if (snapshots.has(turnId)) {
-      const restored = await snapshots.restore(turnId);
+      restored = await snapshots.restore(turnId);
       await projects.rollback(turnId).catch(() => []);
-      return restored;
+    } else {
+      restored = await projects.rollback(turnId);
     }
-    return projects.rollback(turnId);
+    if (restored.length > 0) {
+      auditRecord({
+        kind: "rollback",
+        summary: `Undid a reply: ${restored.join(", ")}`,
+        outcome: `${restored.length} ${restored.length === 1 ? "file" : "files"} restored`,
+      });
+    }
+    return restored;
   });
 
   const projectArg = async (value: unknown): Promise<string> => {
@@ -805,16 +824,24 @@ export function registerIpcHandlers(options: {
   );
 
   // Checks over what the project folder now holds, run when a reply that could change files ends.
-  handle("gates:run", async (_event, projectPath: unknown) =>
-    runGates(
+  handle("gates:run", async (_event, projectPath: unknown) => {
+    const project = await projectArg(projectPath);
+    const results = await runGates(
       {
         gitStatus: (path) => gitWorkspace.status(path),
         problems: (root, filePath, text) => languageServers.problems(root, filePath, text),
         served: (filePath) => servedByLanguageServer(filePath),
       },
-      await projectArg(projectPath),
-    ),
-  );
+      project,
+    );
+    auditRecord({
+      kind: "gate",
+      projectPath: project,
+      summary: results.map((result) => `${result.label} ${result.state}`).join(" · "),
+      outcome: results.some((result) => result.state === "fail") ? "fail" : "pass",
+    });
+    return results;
+  });
   handle("sandbox:status", async () => {
     const kind = await availableSandbox();
     return { available: kind ? SANDBOX_LABELS[kind] : null, enabled: sandboxEnabled() };
@@ -830,6 +857,9 @@ export function registerIpcHandlers(options: {
     return attachments.save("image/png", shot.base64);
   });
 
+  handle("audit:list", async (_event, limit: unknown) =>
+    audit.list(typeof limit === "number" ? limit : undefined),
+  );
   handle("goals:list", async () => goals.list());
   handle("goals:create", async (_event, input: unknown) => goals.create(input as GoalInput));
   handle("goals:update", async (_event, payload: { id: unknown; input: unknown }) =>
@@ -990,6 +1020,13 @@ export function registerIpcHandlers(options: {
             const settle = (optionId: string | undefined) => {
               pendingPermissions.delete(permissionId);
               controller.signal.removeEventListener("abort", cancel);
+              const choice = prompt.options.find((option) => option.id === optionId);
+              auditRecord({
+                kind: "approval",
+                projectPath: projectPath ?? null,
+                summary: prompt.detail ? `${prompt.title}: ${prompt.detail}` : prompt.title,
+                outcome: choice ? choice.kind : "no answer",
+              });
               // Only an option the agent offered may be chosen.
               resolve(
                 prompt.options.some((option) => option.id === optionId) ? optionId : undefined,
@@ -1017,6 +1054,9 @@ export function registerIpcHandlers(options: {
           }
         }
         let reply = "";
+        // Activities arrive several times as they progress; each is recorded once, when it ends.
+        const changedFiles = new Map<string, string>();
+        const recorded = new Set<string>();
         for await (const chunk of adapter.sendMessage({
           model: payload.modelId,
           messages,
@@ -1032,12 +1072,42 @@ export function registerIpcHandlers(options: {
         })) {
           reply += chunk.delta;
           if (chunk.done) recordUsage(payload, payload.messages, reply, chunk);
+          const activity = chunk.activity;
+          if (activity) {
+            if (activity.checkpoint) changedFiles.set(activity.id, activity.title);
+            const ended = activity.status !== "running" && activity.status !== "awaiting-approval";
+            const kind = changedFiles.has(activity.id)
+              ? "edit"
+              : /^Run\b/.test(activity.title)
+                ? "command"
+                : undefined;
+            if (ended && kind && !recorded.has(activity.id)) {
+              recorded.add(activity.id);
+              auditRecord({
+                kind,
+                projectPath: projectPath ?? null,
+                summary: activity.title,
+                outcome: activity.status,
+              });
+            }
+          }
           if (event.sender.isDestroyed()) return;
           event.sender.send("chat:chunk", {
             requestId: payload.requestId,
             paneId: payload.paneId,
             chunk,
           });
+        }
+        // A file change whose tool call never reported an end is still a change.
+        for (const [id, title] of changedFiles) {
+          if (!recorded.has(id)) {
+            auditRecord({
+              kind: "edit",
+              projectPath: projectPath ?? null,
+              summary: title,
+              outcome: "changed",
+            });
+          }
         }
       } finally {
         activeRequests.delete(payload.requestId);

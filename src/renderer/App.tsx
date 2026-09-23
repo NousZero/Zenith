@@ -64,6 +64,7 @@ import {
   PersonaFileEditor,
   ProvidersSection,
   SandboxSection,
+  AuditSection,
 } from "./SettingsSections";
 import {
   ActivityRail,
@@ -1058,6 +1059,7 @@ export function App() {
                 <PermissionsSection onChanged={() => setGuardVersion((value) => value + 1)} />
                 <SandboxSection />
                 <McpSection />
+                <AuditSection />
               </>,
             )}
           {settingsTab === "automation" &&

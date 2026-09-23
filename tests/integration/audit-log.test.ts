@@ -1,0 +1,62 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import type { DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { createAuditLog, redact } from "../../src/main/audit-log";
+import { openDatabase } from "../../src/main/database";
+
+describe("audit log", () => {
+  let dir: string;
+  let db: DatabaseSync;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "zenith-audit-"));
+    db = openDatabase(join(dir, "zenith.db"));
+  });
+
+  afterEach(async () => {
+    db.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("records entries newest first with secrets masked", () => {
+    let clock = 1;
+    const log = createAuditLog(db, () => clock++);
+    log.record({ kind: "command", projectPath: "/p", summary: "npm test", outcome: "done" });
+    log.record({
+      kind: "approval",
+      summary: "Run  OPENAI_API_KEY=sk-abcdefghijklmnop curl -H 'Authorization: Bearer abc.def' x",
+      outcome: "allow_once",
+    });
+    const [latest, first] = log.list();
+    expect(first).toEqual({
+      id: 1,
+      at: 1,
+      kind: "command",
+      projectPath: "/p",
+      summary: "npm test",
+      outcome: "done",
+    });
+    expect(latest?.summary).toBe(
+      "Run OPENAI_API_KEY=[redacted] curl -H 'Authorization: Bearer [redacted] x",
+    );
+    expect(latest?.projectPath).toBeNull();
+  });
+
+  it("masks bare keys in any text", () => {
+    expect(redact("token ghp_abcdefghijklmnopqrstuvwxyz0123 here")).toBe("token [redacted] here");
+    expect(redact("nothing secret")).toBe("nothing secret");
+  });
+
+  it("keeps only the newest 5000 entries", () => {
+    const log = createAuditLog(db);
+    for (let index = 0; index < 5_003; index++) {
+      log.record({ kind: "edit", summary: `file ${index}`, outcome: "done" });
+    }
+    expect(db.prepare("SELECT count(*) AS n FROM audit_log").get()).toEqual({ n: 5_000 });
+    expect(log.list(1)[0]?.summary).toBe("file 5002");
+  });
+});

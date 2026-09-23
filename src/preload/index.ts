@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { BotPlatform, BotSettingsUpdate, BotStatus } from "../shared/bots";
 import type { LibraryItem, LibraryKind } from "../shared/library";
 import type {
+  AuditEntry,
   ChatChunk,
   BoardCard,
   BoardStatus,
@@ -129,6 +130,9 @@ const zenithApi: ZenithApi = {
       previousPath?: string;
     }): Promise<string> => ipcRenderer.invoke("library:save", input),
     remove: (path: string): Promise<void> => ipcRenderer.invoke("library:remove", path),
+  },
+  audit: {
+    list: (limit?: number): Promise<AuditEntry[]> => ipcRenderer.invoke("audit:list", limit),
   },
   workspace: {
     list: (projectPath: string, relativePath: string): Promise<WorkspaceEntry[]> =>

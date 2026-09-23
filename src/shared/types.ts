@@ -5,6 +5,18 @@ import type { LibraryItem, LibraryKind } from "./library";
 export type ChatRole = "user" | "assistant" | "system";
 
 // One check run over what a reply changed. "skipped" means the check could not say either way.
+export type AuditKind = "approval" | "command" | "edit" | "rollback" | "gate";
+
+// One line of the audit log: something an agent did, or a decision the user made about it.
+export interface AuditEntry {
+  id: number;
+  at: number;
+  kind: AuditKind;
+  projectPath: string | null;
+  summary: string;
+  outcome: string;
+}
+
 export interface GateResult {
   id: "secrets" | "problems" | "scope";
   label: string;
@@ -436,6 +448,10 @@ export interface ZenithApi {
       previousPath?: string;
     }): Promise<string>;
     remove(path: string): Promise<void>;
+  };
+  audit: {
+    // Newest first.
+    list(limit?: number): Promise<AuditEntry[]>;
   };
   workspace: {
     list(projectPath: string, relativePath: string): Promise<WorkspaceEntry[]>;

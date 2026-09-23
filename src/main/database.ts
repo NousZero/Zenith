@@ -188,6 +188,17 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX goals_updated_at ON goals (updated_at DESC);
   `,
+  // What agents did on the user's behalf and what the user decided, kept after the chat is gone.
+  `
+  CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('approval', 'command', 'edit', 'rollback', 'gate')),
+    project_path TEXT,
+    summary TEXT NOT NULL,
+    outcome TEXT NOT NULL
+  );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
