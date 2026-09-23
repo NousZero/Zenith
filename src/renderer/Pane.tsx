@@ -2,7 +2,6 @@ import {
   AlertCircle,
   ArrowDown,
   Ban,
-  ArrowUp,
   Bot,
   Brain,
   ClipboardList,
@@ -16,8 +15,6 @@ import {
   GitBranch,
   History,
   KeyRound,
-  MessageSquare,
-  MessageSquareReply,
   MoreHorizontal,
   Pencil,
   RotateCcw,
@@ -57,7 +54,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
-import { Switch } from "./components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { AgentPanel, DiffView } from "./AgentPanel";
 import { AttachmentImage } from "./AttachmentImage";
@@ -338,11 +334,10 @@ export function Pane(props: {
   onAlwaysDeny?(request: PermissionRequest, rule: string): void;
   onChange(patch: Partial<PaneState>): void;
   onRemove(): void;
-  // Multiple panes are on hold: one pane per session hides broadcast, branching, and removal.
+  // Multiple panes are on hold: a single pane hides the remove-pane action.
   singlePane?: boolean;
   onExport?(kind: "markdown" | "html"): void;
   onShowContext?(): void;
-  onSend(prompt: string): void;
   onRetry(): void;
   onUndo(): void;
   onBranch(messageId: string): void;
@@ -359,7 +354,6 @@ export function Pane(props: {
     compacting,
     onChange,
     onRemove,
-    onSend,
     onRetry,
   } = props;
   const connection = connections.find((candidate) => candidate.id === pane.providerId);
@@ -370,9 +364,6 @@ export function Pane(props: {
   });
   const modelsLoading = loadedModels.key !== modelsKey;
   const models = modelsLoading ? [] : loadedModels.models;
-  const [reply, setReply] = useState("");
-  // Panes reply to broadcasts by default; the per-pane reply box opens on demand.
-  const [replyOpen, setReplyOpen] = useState(false);
   const [typingModel, setTypingModel] = useState(false);
   const [customModel, setCustomModel] = useState("");
   const [editingName, setEditingName] = useState(false);
@@ -383,9 +374,7 @@ export function Pane(props: {
 
   const provider = providerMeta(pane.providerId);
   const isConfigured = connection?.state === "ready";
-  const canSend = isConfigured && pane.modelId !== "";
   const modelLabel = models.find((model) => model.id === pane.modelId)?.label ?? pane.modelId;
-  const replyTarget = pane.modelId === DEFAULT_CLI_MODEL_ID ? provider.label : modelLabel;
 
   // Whoever reviews the changes should not be the connection that made them; only fall back to it
   // when nothing else is ready.
@@ -458,14 +447,6 @@ export function Pane(props: {
     stickToBottom.current = true;
     setScrolledUp(false);
     element.scrollTop = element.scrollHeight;
-  }
-
-  function submitReply() {
-    const prompt = reply.trim();
-    if (!prompt || !canSend) return;
-    stickToBottom.current = true;
-    onSend(prompt);
-    setReply("");
   }
 
   function commitName() {
@@ -695,23 +676,6 @@ export function Pane(props: {
             </DropdownMenu>
           )}
 
-          {!props.singlePane && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex shrink-0 items-center px-1.5">
-                  <Switch
-                    aria-label="Include in broadcast"
-                    checked={pane.included}
-                    onCheckedChange={(checked) => onChange({ included: checked })}
-                  />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {pane.included ? "Included in broadcast" : "Excluded from broadcast"}
-              </TooltipContent>
-            </Tooltip>
-          )}
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Pane options">
@@ -851,7 +815,7 @@ export function Pane(props: {
                 title="Pick a model"
                 description="Choose a model from the header to start this conversation."
               />
-            ) : props.singlePane ? (
+            ) : (
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
                 <span
                   aria-hidden
@@ -885,12 +849,6 @@ export function Pane(props: {
                   </li>
                 </ul>
               </div>
-            ) : (
-              <EmptyState
-                icon={MessageSquare}
-                title="Ready"
-                description="Send from the composer to every included pane, or use the reply button below to message only this one."
-              />
             )
           ) : (
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
@@ -933,9 +891,7 @@ export function Pane(props: {
                         content={message.content}
                         isLast={index === pane.messages.length - 1}
                         onBranch={() => props.onBranch(message.id)}
-                        branchLabel={
-                          props.singlePane ? "Branch into new session" : "Branch into new pane"
-                        }
+                        branchLabel="Branch into new session"
                         onRetry={onRetry}
                         onUndo={props.onUndo}
                         onRemember={() => props.onRemember(message.content)}
@@ -1051,76 +1007,13 @@ export function Pane(props: {
       </div>
 
       <footer className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-0 pt-1 text-muted-foreground">
-        {replyOpen && (
-          <form
-            className="relative mb-1.5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitReply();
-            }}
-          >
-            <Input
-              autoFocus
-              aria-label={`Reply to ${pane.name}`}
-              value={reply}
-              onChange={(event) => setReply(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && reply === "") setReplyOpen(false);
-              }}
-              disabled={!canSend}
-              placeholder={canSend ? `Reply to ${replyTarget}…` : "Unavailable until configured"}
-              className="h-9 pr-10"
-            />
-            {streaming ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="secondary"
-                aria-label="Stop reply"
-                onClick={props.onStop}
-                className="absolute right-1 top-1"
-              >
-                <Square className="fill-current" />
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                size="icon-sm"
-                aria-label="Send reply"
-                disabled={!canSend || reply.trim() === ""}
-                className="absolute right-1 top-1"
-              >
-                <ArrowUp />
-              </Button>
-            )}
-          </form>
-        )}
         <div className="flex items-center justify-between gap-2 px-1 text-[11px] text-muted-foreground">
           <span className="flex min-w-0 items-center gap-1.5">
-            {!props.singlePane && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={replyOpen ? "secondary" : "ghost"}
-                    size="icon-xs"
-                    aria-label={replyOpen ? "Hide reply box" : `Reply only to ${pane.name}`}
-                    aria-expanded={replyOpen}
-                    onClick={() => setReplyOpen((open) => !open)}
-                  >
-                    <MessageSquareReply />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {replyOpen ? "Hide reply box" : "Reply only to this pane"}
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {streaming && !replyOpen && (
-              <Button variant="ghost" size="icon-xs" aria-label="Stop reply" onClick={props.onStop}>
+            {streaming && (
+              <Button variant="ghost" size="icon-xs" aria-label="Stop" onClick={props.onStop}>
                 <Square className="fill-current" />
               </Button>
             )}
-            {!props.singlePane && <span className="truncate">{pane.name}</span>}
             {pane.memoryEnabled && (
               <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-1.5 py-px text-[10px] font-medium text-primary">
                 <Brain className="size-2.5" aria-hidden />

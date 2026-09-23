@@ -859,7 +859,6 @@ export function App() {
             onAlwaysDeny={(request, rule) => void alwaysDeny(request, rule)}
             onChange={(patch) => updatePane(pane.id, patch)}
             onRemove={() => removePane(pane.id)}
-            onSend={(prompt) => sendToPane(pane, prompt)}
             onFixGates={(prompt) => sendToCurrent(prompt)}
             onRetry={() => retryPane(pane.id)}
             onUndo={() => undoPane(pane.id)}

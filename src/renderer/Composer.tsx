@@ -26,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from "./components/ui/dropdown-menu";
 import { cn } from "./lib/utils";
-import { DEFAULT_CLI_MODEL_ID, providerMeta } from "./providers";
 import { useDictation } from "./useDictation";
 
 const MAX_TEXTAREA_HEIGHT_PX = 200;
@@ -100,7 +99,7 @@ export function Composer(props: {
   const [projectFiles, setProjectFiles] = useState<{ project: string; files: string[] }>();
   // Caret position the mention query is read from; kept in sync on every keystroke.
   const [caret, setCaret] = useState(0);
-  const projectPath = props.panes.length === 1 ? props.panes[0]?.projectPath : undefined;
+  const projectPath = props.panes[0]?.projectPath;
 
   // What a send is allowed to do, read once so the composer can say it before anything happens.
   useEffect(() => {
@@ -407,7 +406,7 @@ export function Composer(props: {
         <textarea
           ref={textareaRef}
           id={COMPOSER_INPUT_ID}
-          aria-label="Broadcast prompt"
+          aria-label="Message"
           role="combobox"
           aria-expanded={menu.length > 0 || fileMenu.length > 0}
           aria-controls={fileMenu.length > 0 ? "composer-file-menu" : "composer-command-menu"}
@@ -473,11 +472,9 @@ export function Composer(props: {
             }
           }}
           placeholder={
-            props.panes.length === 1
-              ? projectPath
-                ? "Message… · / for commands · @ for files"
-                : "Message… · type / for commands"
-              : "Ask every included pane… · type / for commands"
+            projectPath
+              ? "Message… · / for commands · @ for files"
+              : "Message… · type / for commands"
           }
           className="block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
@@ -495,17 +492,17 @@ export function Composer(props: {
                 Unknown command /{unknownCommand}. Type / to see commands.
               </span>
             ) : included.length === 0 ? (
-              <span className="text-xs text-warning">No panes included in broadcast.</span>
+              <span className="text-xs text-warning">This pane isn't included.</span>
             ) : ready.length === 0 ? (
               <span className="text-xs text-warning">
-                Included panes need a ready connection and a model before sending.
+                This pane needs a ready connection and a model before sending.
               </span>
             ) : props.streaming && props.status ? (
               <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
                 <span className="size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-pulse" />
                 <span className="truncate font-mono">{props.status}</span>
               </span>
-            ) : props.panes.length === 1 && props.panes[0] ? (
+            ) : props.panes[0] ? (
               <>
                 {props.panes[0].projectPath && (
                   <Fact icon={ShieldCheck} title={posture?.summary}>
@@ -519,34 +516,7 @@ export function Composer(props: {
                   </Fact>
                 )}
               </>
-            ) : (
-              included.map((pane) => {
-                const isReady = ready.includes(pane);
-                return (
-                  <span
-                    key={pane.id}
-                    title={isReady ? undefined : "Not ready — needs a connection or model"}
-                    className={cn(
-                      "flex max-w-[180px] shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px]",
-                      isReady ? "text-muted-foreground" : "border-dashed text-muted-foreground/50",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 shrink-0 rounded-full",
-                        providerMeta(pane.providerId).dotClass,
-                        !isReady && "opacity-40",
-                      )}
-                    />
-                    <span className="truncate font-mono">
-                      {pane.modelId && pane.modelId !== DEFAULT_CLI_MODEL_ID
-                        ? pane.modelId
-                        : providerMeta(pane.providerId).label}
-                    </span>
-                  </span>
-                );
-              })
-            )}
+            ) : null}
           </div>
           <input
             ref={fileRef}
@@ -627,13 +597,7 @@ export function Composer(props: {
           )}
           <Button size="sm" disabled={!canSend && !slash} onClick={submit}>
             {props.streaming ? <Clock /> : <ArrowUp />}
-            {props.streaming
-              ? "Queue"
-              : slash
-                ? "Run"
-                : props.panes.length === 1
-                  ? "Send"
-                  : `Send to ${ready.length}`}
+            {props.streaming ? "Queue" : slash ? "Run" : "Send"}
           </Button>
         </div>
       </div>
