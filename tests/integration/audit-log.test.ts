@@ -51,6 +51,18 @@ describe("audit log", () => {
     expect(redact("nothing secret")).toBe("nothing secret");
   });
 
+  it("masks a private key block, a pattern only the secrets gate list catches", () => {
+    expect(redact("saving -----BEGIN RSA PRIVATE KEY----- to disk")).toBe(
+      "saving [redacted] to disk",
+    );
+  });
+
+  it("masks a quoted key literal, a pattern only the secrets gate list catches", () => {
+    expect(redact('password: "abcdefghijklmnopqrstuvwxyz1234" in config')).toBe(
+      "[redacted] in config",
+    );
+  });
+
   it("keeps only the newest 5000 entries", () => {
     const log = createAuditLog(db);
     for (let index = 0; index < 5_003; index++) {

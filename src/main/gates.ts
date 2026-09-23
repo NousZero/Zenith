@@ -36,8 +36,10 @@ const BINARY_EXTENSIONS = new Set([
   ".sqlite",
 ]);
 
-// Named patterns, so a finding says what kind of secret it looks like.
-const SECRETS: readonly { label: string; pattern: RegExp }[] = [
+// Named patterns, so a finding says what kind of secret it looks like. Exported so the audit log
+// can reuse them as its one source of truth for what a secret looks like, instead of keeping a
+// second, drifting list.
+export const SECRETS: readonly { label: string; pattern: RegExp }[] = [
   { label: "an Anthropic or OpenAI key", pattern: /\bsk-[A-Za-z0-9_-]{20,}/ },
   { label: "a GitHub token", pattern: /\bgh[pousr]_[A-Za-z0-9]{20,}/ },
   { label: "an AWS access key", pattern: /\bAKIA[0-9A-Z]{16}\b/ },

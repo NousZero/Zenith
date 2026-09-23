@@ -1,28 +1,33 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { AuditEntry, AuditKind } from "../shared/types";
+import { SECRETS } from "./gates";
 
 // From Agamemnon's audit service: an append-only record of approvals, commands, edits, undos and
 // checks, with secrets masked before anything is written and old entries trimmed.
 const KEEP_ENTRIES = 5_000;
 const MAX_SUMMARY_LENGTH = 500;
 
-// ponytail: pattern-based masking of common key shapes and KEY=value assignments; a secret in
-// an unusual shape is stored as typed. Upgrade path: reuse the secrets gate's scanner.
-const SECRET_PATTERNS: readonly RegExp[] = [
-  /\b(sk-[A-Za-z0-9_-]{8,}|sk-ant-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{16,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,})/g,
-  /\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*)=("[^"]*"|'[^']*'|\S+)/gi,
-  /(Authorization:\s*Bearer\s+)\S+/gi,
-];
+// Bare secret values reuse the secrets gate's named pattern list (src/main/gates.ts) as the one
+// source of truth, so the two scanners can't drift apart. Those patterns are line tests, so a "g"
+// flag is added where it's missing to replace every occurrence in an entry, not just detect one.
+// KEY=value assignments and Authorization headers aren't in that list, and need their surrounding
+// context kept readable rather than replaced outright, so those two shapes stay local.
+const BARE_SECRET_PATTERNS: readonly RegExp[] = SECRETS.map(({ pattern }) =>
+  pattern.flags.includes("g") ? pattern : new RegExp(pattern.source, `${pattern.flags}g`),
+);
+const ASSIGNMENT_PATTERN =
+  /\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*)=("[^"]*"|'[^']*'|\S+)/gi;
+const BEARER_PATTERN = /(Authorization:\s*Bearer\s+)\S+/gi;
 
 export function redact(text: string): string {
-  return SECRET_PATTERNS.reduce(
-    (result, pattern, index) =>
-      result.replace(pattern, (match, first: string) =>
-        index === 0 ? "[redacted]" : `${first}${index === 1 ? "=" : ""}[redacted]`,
-      ),
+  const withoutBareSecrets = BARE_SECRET_PATTERNS.reduce(
+    (result, pattern) => result.replace(pattern, "[redacted]"),
     text,
   );
+  return withoutBareSecrets
+    .replace(ASSIGNMENT_PATTERN, (_match, key: string) => `${key}=[redacted]`)
+    .replace(BEARER_PATTERN, (_match, prefix: string) => `${prefix}[redacted]`);
 }
 
 export function createAuditLog(db: DatabaseSync, now: () => number = Date.now) {
