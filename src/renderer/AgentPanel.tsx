@@ -1,17 +1,19 @@
 import {
   Check,
   CheckCircle2,
+  ChevronUp,
   Circle,
   CircleDot,
   FileDiff,
   History,
+  ListChecks,
   ShieldCheck,
   Wand2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { gateFixPrompt } from "../shared/gates";
-import type { AgentActivity, GateResult, ReviewResult } from "../shared/types";
+import type { AgentActivity, AgentTodo, GateResult, ReviewResult } from "../shared/types";
 import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 import type { AgentTurn } from "./useHarness";
@@ -417,6 +419,79 @@ export function ReviewBar(props: {
           </Button>
         </>
       )}
+    </div>
+  );
+}
+
+// The agent's to-do list while a reply runs, pinned above the composer as Cursor does: how far
+// along it is and the step in progress, opening to the whole list.
+export function TodoStrip({ todos }: { todos: readonly AgentTodo[] }) {
+  const [open, setOpen] = useState(false);
+  const done = todos.filter((todo) => todo.status === "completed").length;
+  const current =
+    todos.find((todo) => todo.status === "in_progress") ??
+    todos.find((todo) => todo.status === "pending");
+  return (
+    <div className="border-t border-border bg-card/60 px-4 py-1.5 text-xs">
+      {open && (
+        <ul aria-label="Plan" className="mb-1.5 flex flex-col gap-1 pt-1">
+          {todos.map((todo, index) => {
+            const Icon =
+              todo.status === "completed"
+                ? CheckCircle2
+                : todo.status === "in_progress"
+                  ? CircleDot
+                  : Circle;
+            return (
+              <li key={index} className="flex items-start gap-2">
+                <Icon
+                  aria-label={todo.status.replace("_", " ")}
+                  className={cn(
+                    "mt-0.5 size-3.5 shrink-0",
+                    todo.status === "completed" && "text-success",
+                    todo.status === "in_progress" && "text-primary",
+                    todo.status === "pending" && "text-muted-foreground",
+                  )}
+                />
+                <span
+                  className={cn(
+                    todo.status === "completed" && "text-muted-foreground line-through",
+                  )}
+                >
+                  {todo.content}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full cursor-pointer items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ListChecks className="size-3.5 shrink-0 text-primary" aria-hidden />
+        <span className="shrink-0 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
+          {done}/{todos.length}
+        </span>
+        <span aria-hidden className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+          <span
+            className="block h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${(done / todos.length) * 100}%` }}
+          />
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          {current ? current.content : "All steps done"}
+        </span>
+        <ChevronUp
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            !open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
     </div>
   );
 }

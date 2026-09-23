@@ -75,7 +75,7 @@ import {
   type ActivityId,
   type DockTab,
 } from "./Workbench";
-import { ReviewBar } from "./AgentPanel";
+import { ReviewBar, TodoStrip } from "./AgentPanel";
 import type {
   ConnectionStatus,
   ImageAttachment,
@@ -882,6 +882,10 @@ export function App() {
           />
         )}
       </div>
+
+      {pane && paneTurn && streamingPaneIds.has(pane.id) && paneTurn.todos.length > 0 && (
+        <TodoStrip todos={paneTurn.todos} />
+      )}
 
       {pane &&
         paneTurn &&
