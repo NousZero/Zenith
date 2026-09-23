@@ -15,6 +15,7 @@ import {
 import {
   createTerminal,
   insideProject,
+  listAllFiles,
   listDirectory,
   readWorkspaceFile,
 } from "../../src/main/workspace";
@@ -118,6 +119,13 @@ describe("workspace, Git, and snapshots", () => {
       "keep.txt",
       "src/a.txt",
     ]);
+  });
+
+  it("walks a non-Git folder for mentions, skipping build output and symlinked directories", async () => {
+    await mkdir(join(project, "node_modules", "pkg"), { recursive: true });
+    await writeFile(join(project, "node_modules", "pkg", "index.js"), "");
+    await symlink(dir, join(project, "escape"));
+    expect((await listAllFiles(project, 20_000)).sort()).toEqual(["keep.txt", "src/a.txt"]);
   });
 
   it("restores files changed, created, and deleted after a snapshot", async () => {

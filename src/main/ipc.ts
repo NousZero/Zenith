@@ -36,7 +36,7 @@ import {
 } from "./bots/transports";
 import { BOT_PLATFORMS, type BotPlatform, type BotSettingsUpdate } from "../shared/bots";
 import { createLibraryStore } from "./library-store";
-import { createGitRunner, createGitWorkspace, createSnapshotStore } from "./git";
+import { createGitRunner, createGitWorkspace, createSnapshotStore, MAX_LISTED_FILES } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
 import { createAuditLog } from "./audit-log";
@@ -56,7 +56,13 @@ import { createCustomProviderStore, customAdapter, customModel } from "./custom-
 import type { CustomProviderInput } from "../shared/custom-providers";
 import { createScheduler } from "./scheduler";
 import { createSemanticIndex, mergeExcerpts, ollamaEmbedder } from "./semantic-index";
-import { createTerminal, insideProject, listDirectory, readWorkspaceFile } from "./workspace";
+import {
+  createTerminal,
+  insideProject,
+  listAllFiles,
+  listDirectory,
+  readWorkspaceFile,
+} from "./workspace";
 import { createProjectStore } from "./project-store";
 import { createCliAdapter } from "./cli/cli-adapter";
 import {
@@ -696,9 +702,12 @@ export function registerIpcHandlers(options: {
     async (_event, payload: { projectPath: unknown; relativePath: unknown }) =>
       readWorkspaceFile(await projectArg(payload.projectPath), String(payload.relativePath ?? "")),
   );
-  handle("workspace:files", async (_event, projectPath: unknown) =>
-    gitWorkspace.files(await projectArg(projectPath)),
-  );
+  handle("workspace:files", async (_event, projectPath: unknown) => {
+    const project = await projectArg(projectPath);
+    const files = await gitWorkspace.files(project);
+    // Not a Git repository (or nothing tracked yet): walk the folder directly instead.
+    return files.length > 0 ? files : listAllFiles(project, MAX_LISTED_FILES);
+  });
   handle("workspace:gitStatus", async (_event, projectPath: unknown) =>
     gitWorkspace.status(await projectArg(projectPath)),
   );

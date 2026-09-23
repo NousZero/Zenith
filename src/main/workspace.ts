@@ -55,6 +55,40 @@ export async function readWorkspaceFile(
   return { path: relativePath, content: buffer.toString("utf8"), reason: null };
 }
 
+// Build output and VCS metadata skipped when walking a project that has no Git repository to
+// list files for instead.
+const SKIPPED_DIRECTORIES = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "out",
+  ".next",
+  "build",
+  "target",
+  ".venv",
+]);
+
+// Files under a project that isn't a Git repository, for `@` mentions when `git ls-files` has
+// nothing to report. Symbolic links are not followed, so a link back into the tree can't loop.
+export async function listAllFiles(projectPath: string, limit: number): Promise<string[]> {
+  const root = await realpath(projectPath);
+  const files: string[] = [];
+
+  async function walk(directory: string, relativePath: string): Promise<void> {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (files.length >= limit) return;
+      if (entry.isSymbolicLink() || SKIPPED_DIRECTORIES.has(entry.name)) continue;
+      const entryPath = [relativePath, entry.name].filter(Boolean).join("/");
+      if (entry.isDirectory()) await walk(join(directory, entry.name), entryPath);
+      else if (entry.isFile()) files.push(entryPath);
+    }
+  }
+
+  await walk(root, "");
+  return files;
+}
+
 export interface TerminalEvents {
   output(id: string, text: string): void;
   exit(id: string, code: number | null): void;

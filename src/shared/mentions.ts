@@ -1,10 +1,10 @@
 // `@path` mentions in the composer. Agents that work in the project folder (Claude Code, Gemini,
 // Copilot, Zenith's own) read the named file themselves, so the mention stays plain text.
 
-// The query being typed after a trailing `@`, or undefined when the prompt does not end in one.
-// ponytail: only a mention at the end of the prompt completes; mid-text caret positions do not.
-export function mentionQuery(prompt: string): string | undefined {
-  return /(?:^|\s)@([^\s@]*)$/.exec(prompt)?.[1];
+// The query in the `@query` run ending at the caret, or undefined when the caret isn't inside
+// one. Requires a preceding start-of-string or whitespace, so `me@example.com` never matches.
+export function mentionQuery(prompt: string, caret: number): string | undefined {
+  return /(?:^|\s)@([^\s@]*)$/.exec(prompt.slice(0, caret))?.[1];
 }
 
 // Files matching the query, best first: file name starts with it, then contains it, then the
@@ -30,7 +30,13 @@ export function rankFiles(files: readonly string[], query: string, limit: number
     .map((item) => item.path);
 }
 
-// Replaces the trailing `@query` with the chosen path.
-export function insertMention(prompt: string, path: string): string {
-  return prompt.replace(/@([^\s@]*)$/, `@${path} `);
+// Replaces the `@query` run ending at the caret with the chosen path, leaving the rest of the
+// prompt untouched. Returns the new text and the caret position just after the inserted mention.
+export function insertMention(
+  prompt: string,
+  caret: number,
+  path: string,
+): { prompt: string; caret: number } {
+  const before = prompt.slice(0, caret).replace(/@([^\s@]*)$/, `@${path} `);
+  return { prompt: before + prompt.slice(caret), caret: before.length };
 }

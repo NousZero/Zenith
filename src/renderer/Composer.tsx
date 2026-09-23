@@ -100,6 +100,8 @@ export function Composer(props: {
   const [posture, setPosture] = useState<Posture | undefined>(undefined);
   // Project files for `@` mentions, fetched the first time one is typed in a project.
   const [projectFiles, setProjectFiles] = useState<{ project: string; files: string[] }>();
+  // Caret position the mention query is read from; kept in sync on every keystroke.
+  const [caret, setCaret] = useState(0);
   const projectPath = props.panes.length === 1 ? props.panes[0]?.projectPath : undefined;
 
   // What a send is allowed to do, read once so the composer can say it before anything happens.
@@ -182,16 +184,16 @@ export function Composer(props: {
       : [];
   const active = Math.min(activeIndex, Math.max(menu.length - 1, 0));
   const exactCommand = slash && props.commands.find((command) => command.name === slash.name);
-  const mention = slash || !projectPath ? undefined : mentionQuery(prompt);
+  const mention = slash || !projectPath ? undefined : mentionQuery(prompt, caret);
   const fileMenu =
     mention !== undefined && projectFiles && projectFiles.project === projectPath
       ? rankFiles(projectFiles.files, mention, MAX_FILE_ITEMS)
       : [];
   const activeFile = Math.min(activeIndex, Math.max(fileMenu.length - 1, 0));
 
-  function loadFiles(nextPrompt: string) {
+  function loadFiles(nextPrompt: string, nextCaret: number) {
     if (!projectPath || projectFiles?.project === projectPath) return;
-    if (mentionQuery(nextPrompt) === undefined) return;
+    if (mentionQuery(nextPrompt, nextCaret) === undefined) return;
     void window.zenith.workspace
       .files(projectPath)
       .then((files) => setProjectFiles({ project: projectPath, files }))
@@ -200,8 +202,12 @@ export function Composer(props: {
 
   function pickFile(path: string) {
     setActiveIndex(0);
-    setPrompt(insertMention(prompt, path));
-    textareaRef.current?.focus();
+    const next = insertMention(prompt, caret, path);
+    setPrompt(next.prompt);
+    setCaret(next.caret);
+    const element = textareaRef.current;
+    element?.focus();
+    requestAnimationFrame(() => element?.setSelectionRange(next.caret, next.caret));
   }
 
   const included = props.panes.filter((pane) => pane.included);
@@ -424,8 +430,10 @@ export function Composer(props: {
             }
           }}
           onChange={(event) => {
+            const nextCaret = event.target.selectionStart ?? event.target.value.length;
             setPrompt(event.target.value);
-            loadFiles(event.target.value);
+            setCaret(nextCaret);
+            loadFiles(event.target.value, nextCaret);
             setUnknownCommand(undefined);
             setActiveIndex(0);
             resize();
@@ -593,9 +601,15 @@ export function Composer(props: {
               {projectPath && (
                 <DropdownMenuItem
                   onSelect={() => {
-                    setPrompt(prompt.trim() ? `${prompt.trimEnd()} @` : "@");
-                    loadFiles("@");
-                    textareaRef.current?.focus();
+                    const nextPrompt = prompt.trim() ? `${prompt.trimEnd()} @` : "@";
+                    setPrompt(nextPrompt);
+                    setCaret(nextPrompt.length);
+                    loadFiles(nextPrompt, nextPrompt.length);
+                    const element = textareaRef.current;
+                    element?.focus();
+                    requestAnimationFrame(() =>
+                      element?.setSelectionRange(nextPrompt.length, nextPrompt.length),
+                    );
                   }}
                 >
                   <FileText />

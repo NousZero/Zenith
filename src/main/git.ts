@@ -92,12 +92,13 @@ export function parseStatus(output: string): GitStatus["files"] {
 }
 
 // Enough for `@` completion in large repositories without shipping a huge list to the renderer.
-const MAX_LISTED_FILES = 20_000;
+export const MAX_LISTED_FILES = 20_000;
 
 export function createGitWorkspace(git: GitRunner) {
   return {
-    // Project files Git knows or would add (ignored ones left out), for `@` mentions.
-    // ponytail: Git projects only; a folder without Git gets no completions.
+    // Project files Git knows or would add (ignored ones left out), for `@` mentions. Returns
+    // nothing for a folder that isn't a Git repository; the workspace:files IPC handler falls
+    // back to a full-folder walk in that case.
     async files(projectPath: string): Promise<string[]> {
       const output = await git(
         ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"],
