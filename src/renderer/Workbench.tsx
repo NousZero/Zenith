@@ -170,6 +170,10 @@ export function ActivityRail(props: {
   onSelect(id: ActivityId): void;
   activeSessionId: string;
   activeSessionName: string;
+  // Live state of the open session; other sessions are not running.
+  activeStatus: "running" | "waiting" | "idle";
+  activeProviderId?: string | undefined;
+  activeProjectPath?: string | undefined;
   onSelectSession(id: string): void;
   onCreateSession(): void;
   onDeleteSession(id: string): Promise<void>;
@@ -260,6 +264,15 @@ export function ActivityRail(props: {
           const isActive = summary.id === props.activeSessionId;
           const isConfirming = confirmDeleteId === summary.id;
           const name = (isActive ? props.activeSessionName : summary.name) || "Untitled session";
+          const providerId = isActive ? props.activeProviderId : summary.providerId;
+          const projectPath = isActive ? props.activeProjectPath : summary.projectPath;
+          const status = isActive ? props.activeStatus : "idle";
+          const detail = [
+            providerId ? providerMeta(providerId).label : undefined,
+            projectPath?.split(/[\\/]/).filter(Boolean).at(-1),
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
             <li key={summary.id} className="group relative">
               <button
@@ -276,12 +289,37 @@ export function ActivityRail(props: {
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                 )}
               >
-                <MessagesSquare
-                  className={cn("size-3.5 shrink-0", isActive ? "text-primary" : "opacity-60")}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate">{name}</span>
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground group-hover:invisible">
+                <span className="relative grid size-3.5 shrink-0 place-items-center self-start pt-0.5">
+                  {status === "idle" ? (
+                    <MessagesSquare
+                      className={cn("size-3.5", isActive ? "text-primary" : "opacity-60")}
+                      aria-hidden
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 rounded-full",
+                        status === "running"
+                          ? "bg-success shadow-[0_0_0_3px_hsl(var(--success)/0.15)] motion-safe:animate-pulse"
+                          : "bg-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.18)]",
+                      )}
+                    />
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{name}</span>
+                  {(detail || status !== "idle") && (
+                    <span className="truncate font-mono text-[10px] text-muted-foreground">
+                      {status === "running"
+                        ? "Working…"
+                        : status === "waiting"
+                          ? "Needs your answer"
+                          : detail}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 self-start pt-px font-mono text-[10px] text-muted-foreground group-hover:invisible">
                   {isActive ? "now" : formatRelativeTime(summary.updatedAt)}
                 </span>
               </button>

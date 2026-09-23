@@ -1110,6 +1110,11 @@ export function App() {
           onSelect={setActivity}
           activeSessionId={sessionId}
           activeSessionName={session.name}
+          activeStatus={
+            pendingCount > 0 ? "waiting" : streamingPaneIds.size > 0 ? "running" : "idle"
+          }
+          activeProviderId={pane?.providerId}
+          activeProjectPath={pane?.projectPath ?? undefined}
           onSelectSession={(id) => void selectSession(id)}
           onCreateSession={() => {
             void createSession();
