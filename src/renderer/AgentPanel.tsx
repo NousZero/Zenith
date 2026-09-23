@@ -380,7 +380,7 @@ function FileChip(props: { name: string; onUndo(): Promise<boolean> }) {
   return (
     <span
       title={props.name}
-      className="group/chip flex max-w-40 items-center gap-0.5 border border-border bg-background/60 py-px pl-1.5 pr-0.5 font-mono text-[10px] text-muted-foreground"
+      className="group/chip flex max-w-40 items-center gap-0.5 border border-border bg-background/60 py-px pl-1.5 pr-0.5 font-mono text-[10px] text-muted-foreground rounded-md"
     >
       <span className="truncate">{label}</span>
       <Button

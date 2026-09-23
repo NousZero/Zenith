@@ -58,7 +58,7 @@ export function PersonaFileEditor(props: {
   }
 
   return (
-    <section className="flex flex-col gap-2.5 border border-border bg-card p-4">
+    <section className="flex flex-col gap-2.5 border border-border bg-card p-4 rounded-lg">
       <h3 className="text-[13px] font-semibold text-foreground">
         {props.title} ({props.file})
       </h3>
@@ -174,7 +174,7 @@ function TextSettingEditor(props: {
 // One titled block on a workbench page.
 export function Section(props: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2.5 border border-border bg-card p-4">
+    <section className="flex flex-col gap-2.5 border border-border bg-card p-4 rounded-lg">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-[13px] font-semibold text-foreground">{props.title}</h3>
         {props.actions}
@@ -200,7 +200,7 @@ export function ConnectionsSection(props: {
         </Button>
       }
     >
-      <ul className="flex flex-col divide-y divide-border border border-border">
+      <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
         {tools.length === 0 ? (
           <li className="p-4 text-[13px] text-muted-foreground">Checking this computer…</li>
         ) : (
@@ -339,7 +339,7 @@ export function ProvidersSection(props: { onChanged(): void }) {
         )
       }
     >
-      <ul className="flex flex-col divide-y divide-border border border-border">
+      <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
         {providers.length === 0 && legacyKeys.length === 0 && (
           <li className="p-4 text-xs text-muted-foreground">
             No API providers yet. Add one with its base URL and API key: OpenAI, Anthropic,
@@ -415,7 +415,7 @@ export function ProvidersSection(props: { onChanged(): void }) {
 
       {draft && (
         <form
-          className="grid gap-3 border border-border bg-background/40 p-4 sm:grid-cols-2"
+          className="grid gap-3 border border-border bg-background/40 p-4 sm:grid-cols-2 rounded-lg"
           onSubmit={(event) => {
             event.preventDefault();
             void save();
@@ -548,13 +548,13 @@ export function AppearanceSection() {
                 setTheme(item.id);
               }}
               className={cn(
-                "flex w-full cursor-pointer flex-col gap-2 border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex w-full cursor-pointer flex-col gap-2 border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg",
                 theme === item.id
                   ? "border-primary bg-primary/[0.06]"
                   : "border-border hover:border-input",
               )}
             >
-              <span className="flex h-8 overflow-hidden border border-border">
+              <span className="flex h-8 overflow-hidden border border-border rounded-md">
                 {item.swatches.map((color) => (
                   <span key={color} className="flex-1" style={{ background: color }} />
                 ))}
@@ -624,7 +624,7 @@ export function AuditSection() {
       {entries && entries.length > 0 && (
         <ol
           aria-label="Activity record"
-          className="max-h-80 overflow-y-auto border border-border font-mono text-[11px]"
+          className="max-h-80 overflow-y-auto border border-border font-mono text-[11px] rounded-lg"
         >
           {entries.map((entry) => (
             <li
@@ -765,7 +765,7 @@ export function PermissionsSection(props: { onChanged?: () => void }) {
                 disabled={rules === null}
                 onClick={() => void choose(posture)}
                 className={cn(
-                  "flex h-full w-full cursor-pointer flex-col gap-1.5 border bg-card p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex h-full w-full cursor-pointer flex-col gap-1.5 border bg-card p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg",
                   active
                     ? "border-primary/60 bg-primary/[0.06]"
                     : "border-border hover:border-input",

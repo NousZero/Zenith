@@ -796,7 +796,7 @@ export function App() {
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
       }}
-      className="w-[22rem] max-w-full truncate border border-transparent bg-transparent px-1 py-0.5 font-sans text-[13px] tracking-normal text-foreground normal-case transition-colors hover:border-border focus:border-ring focus:outline-none"
+      className="w-[22rem] max-w-full truncate border border-transparent bg-transparent px-1 py-0.5 font-sans text-[13px] tracking-normal text-foreground normal-case transition-colors hover:border-border focus:border-ring focus:outline-none rounded-md"
     />
   );
   const sessionActions = (
@@ -943,7 +943,7 @@ export function App() {
               aria-label="Project folder"
               value={dockProjectPath ?? ""}
               onChange={(event) => setDockProject(event.target.value)}
-              className="max-w-[20rem] cursor-pointer truncate border border-transparent bg-transparent font-serif text-lg font-semibold hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="max-w-[20rem] cursor-pointer truncate border border-transparent bg-transparent font-serif text-lg font-semibold hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
             >
               {projectPaths.map((path) => (
                 <option key={path} value={path} title={path}>
@@ -1091,7 +1091,7 @@ export function App() {
                     <button
                       type="button"
                       onClick={card.open}
-                      className="flex h-full w-full cursor-pointer flex-col gap-2 border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex h-full w-full cursor-pointer flex-col gap-2 border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
                     >
                       <card.icon className="size-5 text-primary" aria-hidden />
                       <span className="text-sm font-medium">{card.title}</span>

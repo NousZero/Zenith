@@ -452,7 +452,7 @@ export function RunInspector(props: {
         </div>
         <span
           className={cn(
-            "border px-1.5 py-1 text-[11.5px]",
+            "border px-1.5 py-1 text-[11.5px] rounded-md",
             state === "IDLE" ? "border-success/35 text-success" : "border-primary/40 text-primary",
           )}
         >
@@ -465,13 +465,13 @@ export function RunInspector(props: {
           type="button"
           onClick={props.onShowContext}
           disabled={!pane}
-          className="w-full cursor-pointer border border-border px-3 py-1.5 text-left text-[11.5px] text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full cursor-pointer border border-border px-3 py-1.5 text-left text-[11.5px] text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
         >
           WHAT THE MODEL SAW →
         </button>
       </div>
 
-      <section className="m-4 flex items-center gap-3 border border-primary/20 bg-popover p-3.5">
+      <section className="m-4 flex items-center gap-3 border border-primary/20 bg-popover p-3.5 rounded-md">
         <div
           aria-hidden
           className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/15 font-serif font-bold text-primary"
@@ -521,7 +521,7 @@ export function RunInspector(props: {
       </dl>
 
       {todos.length > 0 && (
-        <section className="mx-4 mt-4 border border-border">
+        <section className="mx-4 mt-4 border border-border rounded-md">
           <p className="eyebrow border-b border-border px-3 py-2 text-muted-foreground">
             Task path
           </p>
@@ -580,7 +580,7 @@ export function RunInspector(props: {
             ready.map((connection) => (
               <li
                 key={connection.id}
-                className="flex items-center gap-1.5 border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                className="flex items-center gap-1.5 border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground rounded-md"
               >
                 <span
                   className={cn("size-1.5 rounded-full", providerMeta(connection.id).dotClass)}
@@ -895,7 +895,7 @@ export function BottomDock(props: {
                 <p className="eyebrow text-muted-foreground">Approval queue</p>
                 <p className="font-mono text-[13px]">{pending} pending</p>
               </div>
-              <span className="border border-border px-1.5 py-1 text-[11.5px] text-muted-foreground">
+              <span className="border border-border px-1.5 py-1 text-[11.5px] text-muted-foreground rounded-md">
                 POLICY ENFORCED
               </span>
             </div>
@@ -932,7 +932,7 @@ export function RolePage(props: { personalityId: string; onChange(id: string): v
               aria-pressed={active}
               onClick={() => props.onChange(personality.id)}
               className={cn(
-                "flex h-full w-full cursor-pointer flex-col gap-1.5 border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex h-full w-full cursor-pointer flex-col gap-1.5 border bg-card p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg",
                 active ? "border-primary/60 bg-primary/[0.06]" : "border-border hover:border-input",
               )}
             >

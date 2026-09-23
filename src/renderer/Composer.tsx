@@ -390,7 +390,7 @@ export function Composer(props: {
                 <img
                   src={item.url}
                   alt="Attached image"
-                  className="size-16 border border-border object-cover"
+                  className="size-16 border border-border object-cover rounded-md"
                 />
                 <button
                   type="button"

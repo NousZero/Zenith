@@ -19,7 +19,7 @@ export function CliOutputDialog(props: { output: CliOutput | null; onClose(): vo
           <DialogTitle>{output?.title ?? ""}</DialogTitle>
           <DialogDescription>{output?.description ?? ""}</DialogDescription>
         </div>
-        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words border border-border bg-background/60 p-3 font-mono text-[11px] leading-relaxed">
+        <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words border border-border bg-background/60 p-3 font-mono text-[11px] leading-relaxed rounded-lg">
           {output?.text ?? "Asking Claude Code…"}
         </pre>
         <div className="flex justify-end">

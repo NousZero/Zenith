@@ -200,7 +200,7 @@ export function LibraryBrowser(props: {
         <p className="text-xs text-muted-foreground">
           {KINDS.find((entry) => entry.id === kind)?.hint}
         </p>
-        <div className="ml-auto flex min-w-48 items-center gap-2 border border-input bg-background px-2">
+        <div className="ml-auto flex min-w-48 items-center gap-2 border border-input bg-background px-2 rounded-md">
           <Search className="size-3.5 text-muted-foreground" aria-hidden />
           <input
             aria-label="Filter library"

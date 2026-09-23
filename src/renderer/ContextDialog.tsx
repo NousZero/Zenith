@@ -57,7 +57,7 @@ export function ContextDialog(props: { paneId: string | null; onClose(): void })
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
             {snapshot.note && (
-              <p className="border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+              <p className="border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground rounded-lg">
                 {snapshot.note}
               </p>
             )}
@@ -65,7 +65,7 @@ export function ContextDialog(props: { paneId: string | null; onClose(): void })
               <details
                 key={`${index}-${item.label}`}
                 open={index === 0}
-                className="border border-border bg-card"
+                className="border border-border bg-card rounded-lg"
               >
                 <summary className="flex cursor-pointer items-center gap-3 px-3 py-2 text-xs">
                   <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>

@@ -285,7 +285,7 @@ export function FilesView(props: { projectPath: string }) {
                       aria-selected={view === entry.id}
                       onClick={() => setView(entry.id)}
                       className={cn(
-                        "cursor-pointer border px-1.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "cursor-pointer border px-1.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
                         view === entry.id
                           ? "border-primary/50 bg-primary/[0.08] text-foreground"
                           : "border-border text-muted-foreground hover:text-foreground",
@@ -311,7 +311,7 @@ export function FilesView(props: { projectPath: string }) {
                   sandbox="allow-scripts allow-same-origin"
                   style={frameWidth ? { width: frameWidth } : undefined}
                   className={cn(
-                    "min-h-0 flex-1 border border-border bg-white",
+                    "min-h-0 flex-1 border border-border bg-white rounded-md",
                     frameWidth && "flex-none",
                   )}
                 />
