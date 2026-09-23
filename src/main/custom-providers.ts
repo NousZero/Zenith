@@ -1,4 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+
+import { writeFileAtomic } from "./atomic-write";
 
 import {
   normalizeBaseUrl,
@@ -132,7 +134,7 @@ export function createCustomProviderStore(filePath: string, credentials: Credent
         for (let n = 2; stored.some((provider) => provider.id === id); n++) id = `${base}-${n}`;
       }
       const next: Stored = { id, name, api: input.api, baseUrl, models };
-      await writeFile(
+      await writeFileAtomic(
         filePath,
         JSON.stringify(
           stored.some((provider) => provider.id === id)
@@ -141,7 +143,6 @@ export function createCustomProviderStore(filePath: string, credentials: Credent
           null,
           2,
         ),
-        "utf8",
       );
       if (input.apiKey === null) await credentials.delete(id);
       else if (input.apiKey.trim()) await credentials.set(id, input.apiKey.trim());
@@ -150,14 +151,13 @@ export function createCustomProviderStore(filePath: string, credentials: Credent
 
     async remove(id: string): Promise<CustomProvider[]> {
       const stored = await readStored();
-      await writeFile(
+      await writeFileAtomic(
         filePath,
         JSON.stringify(
           stored.filter((provider) => provider.id !== id),
           null,
           2,
         ),
-        "utf8",
       );
       await credentials.delete(id);
       return list();

@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+
+import { writeFileAtomic } from "./atomic-write";
 
 import type { AgentTodo, BoardCard, BoardStatus } from "../shared/types";
 import { transaction } from "./database";
@@ -91,7 +93,7 @@ export function createProjectStore(db: DatabaseSync, now: () => number = Date.no
       for (const row of rows) {
         if (row.existed === 1) {
           await mkdir(dirname(row.file_path), { recursive: true });
-          await writeFile(row.file_path, row.before_content ?? "", "utf8");
+          await writeFileAtomic(row.file_path, row.before_content ?? "");
         } else {
           await unlink(row.file_path).catch((error: NodeJS.ErrnoException) => {
             if (error.code !== "ENOENT") throw error;

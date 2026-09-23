@@ -14,6 +14,8 @@ import { access, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { homedir } from "node:os";
 
+import { writeFileAtomic } from "./atomic-write";
+
 import { createAcpAdapter } from "./acp/acp-adapter";
 import { runClaudeAgent } from "./agent/claude-agent";
 import { formatFile } from "./agent/format";
@@ -631,7 +633,7 @@ export function registerIpcHandlers(options: {
 
   handle("persona:set", async (_event, payload: { file: unknown; text: unknown }) => {
     if (typeof payload.text !== "string") throw new TypeError("Persona text must be a string.");
-    await writeFile(personaPath(payload.file), payload.text, "utf8");
+    await writeFileAtomic(personaPath(payload.file), payload.text);
   });
 
   // A project folder from the renderer must be an existing absolute directory.

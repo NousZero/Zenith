@@ -1,4 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+
+import { writeFileAtomic } from "./atomic-write";
 
 // The user's MCP servers, in the same shape Claude Code and Claude Desktop use.
 export interface McpServerConfig {
@@ -61,7 +63,7 @@ export function createMcpConfig(filePath: string) {
     servers,
     async write(text: string): Promise<void> {
       parseMcpConfig(text);
-      await writeFile(filePath, text, "utf8");
+      await writeFileAtomic(filePath, text);
     },
     // For Claude Code's --mcp-config; undefined when no servers are configured.
     async claudeConfigPath(): Promise<string | undefined> {

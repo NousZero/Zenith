@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
+import { writeFileAtomic } from "./atomic-write";
+
 interface SafeStoragePort {
   isEncryptionAvailable(): boolean;
   encryptString(plainText: string): Buffer;
@@ -30,7 +32,7 @@ export function createCredentialStore(options: {
 
   async function writeAll(data: Record<string, string>): Promise<void> {
     await fs.mkdir(dirname(options.filePath), { recursive: true });
-    await fs.writeFile(options.filePath, JSON.stringify(data), "utf8");
+    await writeFileAtomic(options.filePath, JSON.stringify(data));
   }
 
   function requireEncryption(): void {

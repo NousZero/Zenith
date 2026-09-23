@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
-import { glob, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { glob, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
+
+import { writeFileAtomic } from "../atomic-write";
 
 import { unifiedDiff } from "../../shared/diff";
 import { escapesProject, isInside, proposedContent } from "./claude-agent";
@@ -279,7 +281,7 @@ export async function rememberPrompt(profilePath: string, input: Record<string, 
 export async function runRemember(profilePath: string, input: Record<string, unknown>) {
   const { after, fact } = await rememberChange(profilePath, input);
   await mkdir(dirname(profilePath), { recursive: true });
-  await writeFile(profilePath, after, "utf8");
+  await writeFileAtomic(profilePath, after);
   return `Saved to the user's profile: ${fact}`;
 }
 
@@ -400,14 +402,14 @@ export async function runEdit(projectPath: string, input: Record<string, unknown
       `old_string appears ${count} times; include more surrounding text or set replace_all.`,
     );
   }
-  await writeFile(path, proposedContent("Edit", input, before) ?? before, "utf8");
+  await writeFileAtomic(path, proposedContent("Edit", input, before) ?? before);
   return `Edited ${relative(projectPath, path) || path}.`;
 }
 
 export async function runWrite(projectPath: string, input: Record<string, unknown>) {
   const path = resolvePath(projectPath, text(input["file_path"]));
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, text(input["content"]), "utf8");
+  await writeFileAtomic(path, text(input["content"]));
   return `Wrote ${relative(projectPath, path) || path}.`;
 }
 
