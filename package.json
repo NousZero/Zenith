@@ -20,6 +20,8 @@
     "test:integration": "vitest run --project integration",
     "test:component": "vitest run --project component",
     "test": "npm run test:unit && npm run test:integration && npm run test:component",
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:build": "npm run package && npm run test:e2e",
     "verify": "npm run preflight:deps && npm run format:check && npm run lint && npm run typecheck && npm run test",
     "package": "node scripts/forge-build.mjs package",
     "make": "node scripts/forge-build.mjs make"

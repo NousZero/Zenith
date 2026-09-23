@@ -1,0 +1,16 @@
+#!/usr/bin/env node
+// Stand-in Gemini CLI speaking its stream-json shape, so the reviewer path can be driven
+// without a real model. Answers --version for connection detection.
+const args = process.argv.slice(2);
+if (args.includes("--version")) { console.log("0.44.1"); process.exit(0); }
+const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
+let input = "";
+process.stdin.on("data", (chunk) => (input += chunk));
+process.stdin.on("end", () => {
+  const reply =
+    "VERDICT: findings\n\n- SEVERITY: high\n  WHERE: leak.ts:1\n  PROBLEM: An API key is committed in the source.\n  FIX: Read it from the environment instead.";
+  for (const piece of reply.match(/.{1,30}/gs) ?? []) {
+    out({ type: "message", role: "assistant", delta: true, content: piece });
+  }
+  out({ type: "result", status: "success", stats: { input_tokens: 900, output_tokens: 60 } });
+});

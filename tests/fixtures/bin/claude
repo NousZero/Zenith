@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Stand-in Claude Code for screenshots: answers --version, then runs one scripted agent turn
+// (a command, a read, an edit that asks) so the transcript can be looked at without real quota.
+import { createInterface } from "node:readline";
+const args = process.argv.slice(2);
+const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
+if (args[0] === "--version") { console.log("2.1.275 (Claude Code)"); process.exit(0); }
+if (args[0] === "auth") { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
+
+const lines = createInterface({ input: process.stdin });
+let step = "prompt";
+lines.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (step === "prompt" && message.type === "user") {
+    step = "approval";
+    out({ type: "system", subtype: "init", cwd: process.cwd() });
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t0", name: "TodoWrite", input: { todos: [
+      { content: "Run the test suite", status: "completed", activeForm: "Running the test suite" },
+      { content: "Read the IPC handlers", status: "completed", activeForm: "Reading the IPC handlers" },
+      { content: "Add notes to the README", status: "in_progress", activeForm: "Adding notes to the README" },
+      { content: "Fix vitest.config.ts", status: "pending", activeForm: "Fixing vitest.config.ts" },
+    ] } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t0", content: "ok" }] } });
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "npm test -- --silent" } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "2 suites failed" , is_error: true }] } });
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t2", name: "Read", input: { file_path: `${process.cwd()}/src/main/ipc.ts` } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "ok" }] } });
+    const input = { file_path: `${process.cwd()}/README.md`, old_string: "# demo", new_string: "# demo\n\nnotes", replace_all: false };
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t3", name: "Edit", input }] } });
+    out({ type: "control_request", request_id: "r1", request: { subtype: "can_use_tool", tool_name: "Edit", input, tool_use_id: "t3" } });
+    return;
+  }
+  if (step === "approval" && message.type === "control_response") {
+    step = "done";
+    const reply = "Tests fail because the config is stale.\n\n- `npm test` reports two failing suites\n- the fix belongs in `vitest.config.ts`\n\nWant me to change it?";
+    for (const piece of reply.match(/.{1,24}/gs) ?? []) {
+      out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: piece } } });
+    }
+    out({ type: "result", subtype: "success", usage: { input_tokens: 1200, output_tokens: 180 } });
+    lines.close();
+  }
+});
