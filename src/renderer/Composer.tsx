@@ -27,7 +27,9 @@ const isMac = navigator.userAgent.includes("Mac");
 
 export const COMPOSER_INPUT_ID = "composer-input";
 // The library can hold hundreds of skills; the menu narrows as the name is typed.
-const MAX_MENU_ITEMS = 40;
+// Every command fits so each group shows; typing narrows it. Files stay short: they are ranked.
+const MAX_MENU_ITEMS = 200;
+const MAX_FILE_ITEMS = 12;
 
 // One fact about what pressing send will do: which connection answers, which folder it may
 // touch, and how much it may do without asking.
@@ -176,7 +178,7 @@ export function Composer(props: {
   const mention = slash || !projectPath ? undefined : mentionQuery(prompt);
   const fileMenu =
     mention !== undefined && projectFiles && projectFiles.project === projectPath
-      ? rankFiles(projectFiles.files, mention, MAX_MENU_ITEMS)
+      ? rankFiles(projectFiles.files, mention, MAX_FILE_ITEMS)
       : [];
   const activeFile = Math.min(activeIndex, Math.max(fileMenu.length - 1, 0));
 
@@ -261,7 +263,16 @@ export function Composer(props: {
           aria-label="Commands"
           className="absolute bottom-full left-4 right-4 mb-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/40"
         >
-          {menu.map((command, index) => (
+          {menu.map((command, index) => [
+            (command.group ?? "Zenith") !== (menu[index - 1]?.group ?? "Zenith") || index === 0 ? (
+              <li
+                key={`group-${command.group ?? "Zenith"}`}
+                role="presentation"
+                className="eyebrow px-3 pb-1 pt-2 text-muted-foreground first:pt-1"
+              >
+                {command.group ?? "Zenith"}
+              </li>
+            ) : null,
             <li
               key={command.name}
               id={`composer-command-${command.name}`}
@@ -278,15 +289,21 @@ export function Composer(props: {
               )}
             >
               <command.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="w-28 shrink-0 font-mono text-xs">/{command.name}</span>
+              <span className="w-44 shrink-0 truncate font-mono text-xs">/{command.name}</span>
               <span className="min-w-0 flex-1 truncate text-muted-foreground">
                 {command.title}
                 {command.argument && (
                   <span className="ml-2 font-mono text-[11px] opacity-70">{command.argument}</span>
                 )}
               </span>
-            </li>
-          ))}
+            </li>,
+          ])}
+          <li
+            role="presentation"
+            className="sticky -bottom-1.5 -mx-1.5 mt-1 border-t border-border bg-popover px-4 py-1.5 font-mono text-[10px] text-muted-foreground"
+          >
+            ↑↓ move · Enter run · Tab complete · Esc close
+          </li>
         </ul>
       )}
       {fileMenu.length > 0 && (

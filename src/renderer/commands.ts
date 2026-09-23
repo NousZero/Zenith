@@ -7,6 +7,8 @@ export interface Command {
   icon: LucideIcon;
   // Placeholder for the text after the command name; absent when it takes none.
   argument?: string;
+  // Heading it is listed under in the composer menu; Zenith's own when absent.
+  group?: "Skills" | "Commands";
   run(argument: string): void;
 }
 

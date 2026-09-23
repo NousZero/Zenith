@@ -733,9 +733,12 @@ export function App() {
     },
     ...library
       .filter((item) => item.kind !== "agent" && !BUILTIN_COMMAND_NAMES.has(item.name))
+      // Skills, then commands, so each heading in the composer menu appears once.
+      .sort((a, b) => Number(a.kind !== "skill") - Number(b.kind !== "skill"))
       .map((item): Command => ({
         name: item.name,
-        title: `${item.kind === "skill" ? "Skill" : "Command"}: ${item.description}`,
+        title: item.description,
+        group: item.kind === "skill" ? "Skills" : "Commands",
         icon: item.kind === "skill" ? Sparkles : FileText,
         argument: item.argumentHint || "<task>",
         run: (argumentsText) => void runLibraryItem(item, argumentsText),
