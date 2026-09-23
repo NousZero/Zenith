@@ -323,7 +323,9 @@ export function useHarness(
                 messages: [
                   ...history,
                   {
-                    id: crypto.randomUUID(),
+                    // The reply's checkpoints are kept under requestId, so the prompt that
+                    // started it doubles as a restore point.
+                    id: requestId,
                     role: "user",
                     content: prompt,
                     ...(images.length ? { images } : {}),
@@ -612,6 +614,34 @@ export function useHarness(
     [agentTurns, updatePane],
   );
 
+  // Puts the project back as it was before messageId ran, undoing every later reply newest first,
+  // and cuts the conversation back to before it. Returns the prompt so it can be edited and resent.
+  const restoreTo = useCallback(
+    async (paneId: string, messageId: string): Promise<string | undefined> => {
+      if (streamState.current.has(paneId)) return undefined;
+      const pane = session.panes.find((candidate) => candidate.id === paneId);
+      const index = pane?.messages.findIndex((message) => message.id === messageId) ?? -1;
+      if (!pane || index < 0) return undefined;
+      const turnIds = pane.messages
+        .slice(index)
+        .filter((message) => message.role === "user")
+        .map((message) => message.id)
+        .reverse();
+      try {
+        for (const turnId of turnIds) await window.zenith.projects.rollback(turnId);
+      } catch (error: unknown) {
+        updatePane(paneId, { lastError: `Could not restore files: ${describeSendError(error)}` });
+        return undefined;
+      }
+      setAgentTurns((current) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => id !== paneId)),
+      );
+      updatePane(paneId, { messages: pane.messages.slice(0, index), lastError: null });
+      return pane.messages[index]?.content;
+    },
+    [session.panes, updatePane],
+  );
+
   const abortAll = useCallback(() => {
     for (const paneId of [...streamState.current.keys()]) abortPane(paneId);
   }, [abortPane]);
@@ -652,6 +682,7 @@ export function useHarness(
     cancelQueue,
     retryPane,
     undoPane,
+    restoreTo,
     branchPane,
     abortPane,
     abortAll,

@@ -14,6 +14,7 @@ import {
   FolderTree,
   KanbanSquare,
   GitBranch,
+  History,
   KeyRound,
   MessageSquare,
   MessageSquareReply,
@@ -230,6 +231,32 @@ function MessageActions(props: {
   );
 }
 
+// Two clicks, as restoring throws away later replies and file changes.
+function RestoreButton(props: { onRestore(): void }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <Button
+      variant={confirming ? "destructive" : "ghost"}
+      size="xs"
+      onClick={() => {
+        if (!confirming) return setConfirming(true);
+        setConfirming(false);
+        props.onRestore();
+      }}
+      onBlur={() => setConfirming(false)}
+      className={cn(
+        "absolute right-1 top-1 transition-opacity",
+        confirming
+          ? "opacity-100"
+          : "text-muted-foreground opacity-0 group-hover/prompt:opacity-100 focus-visible:opacity-100",
+      )}
+    >
+      <History />
+      {confirming ? "Undo this and everything after?" : "Restore to here"}
+    </Button>
+  );
+}
+
 function NotReadyState(props: {
   label: string;
   connection: ConnectionStatus | undefined;
@@ -315,6 +342,8 @@ export function Pane(props: {
   onRetry(): void;
   onUndo(): void;
   onBranch(messageId: string): void;
+  // Undo everything from this prompt on, files included, and hand the prompt back to edit.
+  onRestore?(messageId: string): void;
   onStop(): void;
   onOpenSettings(): void;
 }) {
@@ -845,8 +874,11 @@ export function Pane(props: {
                   // command you typed above its output.
                   <div
                     key={message.id}
-                    className="flex max-w-full gap-2.5 border-l-2 border-primary/60 bg-secondary/40 py-1.5 pl-2.5 pr-3 text-[13px] leading-relaxed text-foreground"
+                    className="group/prompt relative flex max-w-full gap-2.5 border-l-2 border-primary/60 bg-secondary/40 py-1.5 pl-2.5 pr-3 text-[13px] leading-relaxed text-foreground"
                   >
+                    {props.onRestore && !streaming && (
+                      <RestoreButton onRestore={() => props.onRestore?.(message.id)} />
+                    )}
                     <span aria-hidden className="select-none font-mono text-primary">
                       ❯
                     </span>

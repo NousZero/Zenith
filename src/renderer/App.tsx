@@ -172,6 +172,7 @@ export function App() {
     cancelQueue,
     retryPane,
     undoPane,
+    restoreTo,
     abortPane,
     abortAll,
     clearAgentCache,
@@ -855,6 +856,11 @@ export function App() {
             onFixGates={(prompt) => sendToCurrent(prompt)}
             onRetry={() => retryPane(pane.id)}
             onUndo={() => undoPane(pane.id)}
+            onRestore={(messageId) =>
+              void restoreTo(pane.id, messageId).then((prompt) => {
+                if (prompt !== undefined) setComposerPrompt(prompt);
+              })
+            }
             onBranch={branchToSession}
             onSaveSkill={saveAsSkill}
             onExport={(kind) => void exportSession(kind)}
