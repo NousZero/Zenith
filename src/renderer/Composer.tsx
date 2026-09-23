@@ -65,10 +65,6 @@ function Fact(props: {
   );
 }
 
-function folderName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
-}
-
 export function Composer(props: {
   panes: PaneState[];
   readyProviders: string[];
@@ -85,8 +81,10 @@ export function Composer(props: {
   status?: string | null;
   // Bumped when the permission rules change, so the facts re-read them.
   permissionsVersion?: number;
+  // Receives the element the pane renders its provider, model, and folder controls into.
+  onControlsSlot?: (element: HTMLElement | null) => void;
 }) {
-  const { prompt, onPromptChange: setPrompt } = props;
+  const { prompt, onPromptChange: setPrompt, onControlsSlot } = props;
   const dictation = useDictation((text) =>
     setPrompt(prompt.trim() ? `${prompt.trimEnd()} ${text}` : text),
   );
@@ -483,7 +481,8 @@ export function Composer(props: {
           }
           className="block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
-        <div className="flex items-center gap-2 px-2 pb-2 pl-3">
+        <div className="flex items-center gap-2 px-2 pb-2 pl-2">
+          <span ref={onControlsSlot} className="contents" />
           <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
             {imageError ? (
               <span className="text-xs text-danger">{imageError}</span>
@@ -508,23 +507,6 @@ export function Composer(props: {
               </span>
             ) : props.panes.length === 1 && props.panes[0] ? (
               <>
-                <Fact
-                  dotClass={providerMeta(props.panes[0].providerId).dotClass}
-                  dim={ready.length === 0}
-                >
-                  {props.panes[0].modelId && props.panes[0].modelId !== DEFAULT_CLI_MODEL_ID
-                    ? props.panes[0].modelId
-                    : providerMeta(props.panes[0].providerId).label}
-                </Fact>
-                <Fact
-                  icon={FolderOpen}
-                  dim={!props.panes[0].projectPath}
-                  title={props.panes[0].projectPath ?? undefined}
-                >
-                  {props.panes[0].projectPath
-                    ? folderName(props.panes[0].projectPath)
-                    : "no folder · chat only"}
-                </Fact>
                 {props.panes[0].projectPath && (
                   <Fact icon={ShieldCheck} title={posture?.summary}>
                     {props.panes[0].planMode

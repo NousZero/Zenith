@@ -138,6 +138,7 @@ export function App() {
   const [activity, setActivity] = useState<ActivityId>("workspace");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
   const [dockOpen, setDockOpen] = useState(false);
+  const [composerControls, setComposerControls] = useState<HTMLElement | null>(null);
   const [dockShowTab, setDockShowTab] = useState<{ tab: DockTab; at: number }>();
   // Replies whose changes the user kept, so the review bar stops asking.
   const [keptTurnIds, setKeptTurnIds] = useState<ReadonlySet<string>>(new Set());
@@ -824,6 +825,7 @@ export function App() {
         {pane ? (
           <Pane
             pane={pane}
+            controlsSlot={composerControls}
             singlePane
             credentialsVersion={credentialsVersion}
             connections={connections}
@@ -912,6 +914,7 @@ export function App() {
         )}
 
       <Composer
+        onControlsSlot={setComposerControls}
         panes={session.panes.slice(0, 1)}
         readyProviders={readyProviders}
         commands={commands}
@@ -1154,8 +1157,6 @@ export function App() {
           activeStatus={
             pendingCount > 0 ? "waiting" : streamingPaneIds.size > 0 ? "running" : "idle"
           }
-          activeProviderId={pane?.providerId}
-          activeProjectPath={pane?.projectPath ?? undefined}
           onSelectSession={(id) => void selectSession(id)}
           onCreateSession={() => {
             void createSession();

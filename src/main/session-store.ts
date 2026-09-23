@@ -56,12 +56,7 @@ function parseImages(text: string | null): PaneMessage["images"] {
 
 export function createSessionStore(db: DatabaseSync, now: () => number = Date.now): SessionStore {
   const statements = {
-    list: db.prepare(
-      `SELECT s.id, s.name, s.updated_at, p.provider_id, p.project_path FROM sessions s
-       LEFT JOIN panes p ON p.session_id = s.id
-         AND p.position = (SELECT MIN(position) FROM panes WHERE session_id = s.id)
-       ORDER BY s.updated_at DESC`,
-    ),
+    list: db.prepare("SELECT id, name, updated_at FROM sessions ORDER BY updated_at DESC"),
     session: db.prepare(
       "SELECT id, name, memory_text, personality_id, updated_at FROM sessions WHERE id = ?",
     ),
@@ -145,20 +140,8 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
   return {
     async list() {
       return (
-        statements.list.all() as unknown as {
-          id: string;
-          name: string;
-          updated_at: number;
-          provider_id: string | null;
-          project_path: string | null;
-        }[]
-      ).map((row) => ({
-        id: row.id,
-        name: row.name,
-        updatedAt: row.updated_at,
-        providerId: row.provider_id ?? undefined,
-        projectPath: row.project_path ?? undefined,
-      }));
+        statements.list.all() as unknown as { id: string; name: string; updated_at: number }[]
+      ).map((row) => ({ id: row.id, name: row.name, updatedAt: row.updated_at }));
     },
 
     async load(id) {

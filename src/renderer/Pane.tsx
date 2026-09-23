@@ -30,7 +30,8 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { denyRuleFor } from "../shared/deny-rule";
 import type { ConnectionStatus, Model, PaneState, PermissionRequest } from "../shared/types";
@@ -310,6 +311,9 @@ function NotReadyState(props: {
 
 export function Pane(props: {
   pane: PaneState;
+  // Where the provider, model, folder, and pane menu go instead of a header above the chat: the
+  // composer's controls row, as in Cursor. Without it the pane keeps its own header.
+  controlsSlot?: HTMLElement | null;
   credentialsVersion: number;
   connections: ConnectionStatus[];
   streaming: boolean;
@@ -480,322 +484,342 @@ export function Pane(props: {
           : "Unavailable"
       : "Select model";
 
+  const renderControls = (children: ReactNode) =>
+    props.controlsSlot ? (
+      createPortal(
+        <div className="flex shrink-0 items-center gap-0.5">{children}</div>,
+        props.controlsSlot,
+      )
+    ) : (
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
+        {children}
+      </header>
+    );
+
   return (
     <section aria-label={pane.name} className="@container flex h-full min-w-0 flex-col bg-card">
-      <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
-        {editingName ? (
-          <Input
-            autoFocus
-            aria-label="Pane name"
-            value={draftName}
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={commitName}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commitName();
-              if (event.key === "Escape") setEditingName(false);
-            }}
-            className="h-8 flex-1"
-          />
-        ) : (
-          <>
-            <Select
-              value={pane.providerId}
-              onValueChange={(value) =>
-                onChange({
-                  providerId: value,
-                  modelId: usesDefaultModel(providerMeta(value).kind) ? DEFAULT_CLI_MODEL_ID : "",
-                  contextWindow: null,
-                })
-              }
-            >
-              <SelectTrigger
-                aria-label="Provider"
-                className="h-8 w-auto max-w-[140px] shrink-0 border-transparent bg-transparent px-2 font-medium hover:bg-accent @max-[460px]:[&_.option-label]:hidden"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="min-w-[14rem]">
-                {providerGroups(connections, pane.providerId).map((group, groupIndex) => (
-                  <SelectGroup key={group.label}>
-                    {groupIndex > 0 && <SelectSeparator />}
-                    <SelectLabel>{group.label}</SelectLabel>
-                    {group.providers.map((option) => {
-                      const status = connections.find((c) => c.id === option.id);
-                      const ready = status?.state === "ready";
-                      return (
-                        <SelectItem key={option.id} value={option.id}>
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "size-2 shrink-0 rounded-full",
-                                option.dotClass,
-                                !ready && "opacity-35",
-                              )}
-                            />
-                            <span className={cn("option-label", !ready && "text-muted-foreground")}>
-                              {option.label}
-                            </span>
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectGroup>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="select-none text-muted-foreground/50" aria-hidden>
-              /
-            </span>
-            {typingModel ? (
-              <form
-                className="flex min-w-0 flex-1 items-center gap-1"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const value = customModel.trim();
-                  if (value) onChange({ modelId: value, contextWindow: null });
-                  setTypingModel(false);
-                }}
-              >
-                <Input
-                  autoFocus
-                  aria-label="Model id"
-                  value={customModel}
-                  onChange={(event) => setCustomModel(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setTypingModel(false);
-                  }}
-                  placeholder="claude-opus-5"
-                  className="h-8 font-mono text-xs"
-                />
-                <Button type="submit" size="xs" disabled={customModel.trim() === ""}>
-                  Use
-                </Button>
-              </form>
-            ) : (
+      {renderControls(
+        <>
+          {editingName ? (
+            <Input
+              autoFocus
+              aria-label="Pane name"
+              value={draftName}
+              onChange={(event) => setDraftName(event.target.value)}
+              onBlur={commitName}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") commitName();
+                if (event.key === "Escape") setEditingName(false);
+              }}
+              className="h-8 flex-1"
+            />
+          ) : (
+            <>
               <Select
-                value={pane.modelId}
-                onValueChange={(value) => {
-                  if (value === CUSTOM_MODEL) {
-                    setCustomModel(pane.modelId === DEFAULT_CLI_MODEL_ID ? "" : pane.modelId);
-                    setTypingModel(true);
-                    return;
-                  }
-                  onChange({ modelId: value, contextWindow: null });
-                }}
-                disabled={models.length === 0}
+                value={pane.providerId}
+                onValueChange={(value) =>
+                  onChange({
+                    providerId: value,
+                    modelId: usesDefaultModel(providerMeta(value).kind) ? DEFAULT_CLI_MODEL_ID : "",
+                    contextWindow: null,
+                  })
+                }
               >
                 <SelectTrigger
-                  aria-label="Model"
-                  className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-[13px] hover:bg-accent"
+                  aria-label="Provider"
+                  className="h-8 w-auto max-w-[140px] shrink-0 border-transparent bg-transparent px-2 font-medium hover:bg-accent @max-[460px]:[&_.option-label]:hidden"
                 >
-                  <SelectValue placeholder={modelPlaceholder}>{modelLabel}</SelectValue>
+                  <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="min-w-[16rem]">
-                  {models.map((model) => (
-                    <SelectItem key={model.id} value={model.id} className="text-[13px]">
-                      {model.label}
-                    </SelectItem>
+                <SelectContent className="min-w-[14rem]">
+                  {providerGroups(connections, pane.providerId).map((group, groupIndex) => (
+                    <SelectGroup key={group.label}>
+                      {groupIndex > 0 && <SelectSeparator />}
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {group.providers.map((option) => {
+                        const status = connections.find((c) => c.id === option.id);
+                        const ready = status?.state === "ready";
+                        return (
+                          <SelectItem key={option.id} value={option.id}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className={cn(
+                                  "size-2 shrink-0 rounded-full",
+                                  option.dotClass,
+                                  !ready && "opacity-35",
+                                )}
+                              />
+                              <span
+                                className={cn("option-label", !ready && "text-muted-foreground")}
+                              >
+                                {option.label}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectGroup>
                   ))}
-                  {pane.modelId && !models.some((model) => model.id === pane.modelId) && (
-                    <SelectItem value={pane.modelId} className="text-[13px]">
-                      {pane.modelId}
-                    </SelectItem>
-                  )}
-                  <SelectSeparator />
-                  <SelectItem value={CUSTOM_MODEL} className="text-xs">
-                    Custom model…
-                  </SelectItem>
                 </SelectContent>
               </Select>
-            )}
-          </>
-        )}
+              <span className="select-none text-muted-foreground/50" aria-hidden>
+                /
+              </span>
+              {typingModel ? (
+                <form
+                  className="flex min-w-0 flex-1 items-center gap-1"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const value = customModel.trim();
+                    if (value) onChange({ modelId: value, contextWindow: null });
+                    setTypingModel(false);
+                  }}
+                >
+                  <Input
+                    autoFocus
+                    aria-label="Model id"
+                    value={customModel}
+                    onChange={(event) => setCustomModel(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setTypingModel(false);
+                    }}
+                    placeholder="claude-opus-5"
+                    className="h-8 font-mono text-xs"
+                  />
+                  <Button type="submit" size="xs" disabled={customModel.trim() === ""}>
+                    Use
+                  </Button>
+                </form>
+              ) : (
+                <Select
+                  value={pane.modelId}
+                  onValueChange={(value) => {
+                    if (value === CUSTOM_MODEL) {
+                      setCustomModel(pane.modelId === DEFAULT_CLI_MODEL_ID ? "" : pane.modelId);
+                      setTypingModel(true);
+                      return;
+                    }
+                    onChange({ modelId: value, contextWindow: null });
+                  }}
+                  disabled={models.length === 0}
+                >
+                  <SelectTrigger
+                    aria-label="Model"
+                    className={cn(
+                      "h-8 min-w-0 border-transparent bg-transparent px-2 text-[13px] hover:bg-accent",
+                      // In the composer the model sits between other controls, so it sizes to its name.
+                      props.controlsSlot ? "w-auto max-w-[180px]" : "flex-1",
+                    )}
+                  >
+                    <SelectValue placeholder={modelPlaceholder}>{modelLabel}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[16rem]">
+                    {models.map((model) => (
+                      <SelectItem key={model.id} value={model.id} className="text-[13px]">
+                        {model.label}
+                      </SelectItem>
+                    ))}
+                    {pane.modelId && !models.some((model) => model.id === pane.modelId) && (
+                      <SelectItem value={pane.modelId} className="text-[13px]">
+                        {pane.modelId}
+                      </SelectItem>
+                    )}
+                    <SelectSeparator />
+                    <SelectItem value={CUSTOM_MODEL} className="text-xs">
+                      Custom model…
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </>
+          )}
 
-        {/* Every connection can work in a folder; the CLIs switch to their agent mode there. */}
-        {!editingName && (
-          <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {pane.projectPath ? (
-                  <DropdownMenuTrigger asChild>
+          {/* Every connection can work in a folder; the CLIs switch to their agent mode there. */}
+          {!editingName && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {pane.projectPath ? (
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        aria-label={`Project folder ${pane.projectPath}`}
+                        className="max-w-[120px] shrink-0 text-primary"
+                      >
+                        <FolderOpen />
+                        <span className="truncate">{folderName(pane.projectPath)}</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                  ) : (
                     <Button
                       variant="ghost"
-                      size="xs"
-                      aria-label={`Project folder ${pane.projectPath}`}
-                      className="max-w-[120px] shrink-0 text-primary"
+                      size="icon-sm"
+                      aria-label="Work in a project folder"
+                      className="shrink-0"
+                      onClick={() => void chooseProject()}
                     >
                       <FolderOpen />
-                      <span className="truncate">{folderName(pane.projectPath)}</span>
                     </Button>
-                  </DropdownMenuTrigger>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Work in a project folder"
-                    className="shrink-0"
-                    onClick={() => void chooseProject()}
-                  >
+                  )}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {pane.projectPath
+                    ? `Agent works in ${pane.projectPath}`
+                    : "Work in a project folder: the agent can read, edit, and run commands there, asking you first"}
+                </TooltipContent>
+              </Tooltip>
+              {pane.projectPath && (
+                <DropdownMenuContent align="end" className="max-w-[20rem]">
+                  <DropdownMenuLabel className="truncate font-mono text-[11px]">
+                    {pane.projectPath}
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem onSelect={() => props.onOpenWorkspace(pane.projectPath ?? "")}>
+                    <FolderTree />
+                    Open workspace
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => props.onOpenBoard(pane.projectPath ?? "")}>
+                    <KanbanSquare />
+                    Open project board
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void chooseProject()}>
                     <FolderOpen />
-                  </Button>
-                )}
+                    Change folder…
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => onChange({ projectPath: null })}>
+                    Stop using this folder
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              )}
+            </DropdownMenu>
+          )}
+
+          {!props.singlePane && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex shrink-0 items-center px-1.5">
+                  <Switch
+                    aria-label="Include in broadcast"
+                    checked={pane.included}
+                    onCheckedChange={(checked) => onChange({ included: checked })}
+                  />
+                </span>
               </TooltipTrigger>
               <TooltipContent>
-                {pane.projectPath
-                  ? `Agent works in ${pane.projectPath}`
-                  : "Work in a project folder: the agent can read, edit, and run commands there, asking you first"}
+                {pane.included ? "Included in broadcast" : "Excluded from broadcast"}
               </TooltipContent>
             </Tooltip>
-            {pane.projectPath && (
-              <DropdownMenuContent align="end" className="max-w-[20rem]">
-                <DropdownMenuLabel className="truncate font-mono text-[11px]">
-                  {pane.projectPath}
-                </DropdownMenuLabel>
-                <DropdownMenuItem onSelect={() => props.onOpenWorkspace(pane.projectPath ?? "")}>
-                  <FolderTree />
-                  Open workspace
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" aria-label="Pane options">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{pane.name}</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={() => {
+                  setDraftName(pane.name);
+                  setEditingName(true);
+                }}
+              >
+                <Pencil />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuCheckboxItem
+                checked={pane.memoryEnabled}
+                onCheckedChange={(checked) => onChange({ memoryEnabled: checked })}
+              >
+                <Brain />
+                Use session memory
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={pane.planMode}
+                onCheckedChange={(checked) => onChange({ planMode: checked })}
+              >
+                <ClipboardList />
+                Plan mode (read only)
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem onSelect={props.onChooseAgent}>
+                <Bot />
+                {props.agentName ? "Change agent…" : "Choose agent…"}
+              </DropdownMenuItem>
+              {props.agentName && (
+                <DropdownMenuItem onSelect={() => onChange({ agentPath: null })}>
+                  Stop using {props.agentName}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => props.onOpenBoard(pane.projectPath ?? "")}>
-                  <KanbanSquare />
-                  Open project board
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                disabled={!lastAssistant}
+                onSelect={() => {
+                  if (lastAssistant) void navigator.clipboard.writeText(lastAssistant.content);
+                }}
+              >
+                <Copy />
+                Copy last reply
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!hasPrompt} onSelect={onRetry}>
+                <RotateCcw />
+                Retry last prompt
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!hasPrompt} onSelect={props.onUndo}>
+                <Undo2 />
+                Undo last exchange
+              </DropdownMenuItem>
+              {props.onShowContext && (
+                <DropdownMenuItem onSelect={props.onShowContext}>
+                  <ScanEye />
+                  What the model saw
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void chooseProject()}>
-                  <FolderOpen />
-                  Change folder…
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onChange({ projectPath: null })}>
-                  Stop using this folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            )}
+              )}
+              {props.onExport && (
+                <>
+                  <DropdownMenuItem
+                    disabled={pane.messages.length === 0}
+                    onSelect={() => props.onExport?.("markdown")}
+                  >
+                    <FileDown />
+                    Export as Markdown…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={pane.messages.length === 0}
+                    onSelect={() => props.onExport?.("html")}
+                  >
+                    <FileDown />
+                    Export as web page…
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuItem disabled={!canCompact} onSelect={props.onCompact}>
+                <Shrink />
+                Compact conversation
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={pane.messages.length === 0 && pane.lastError === null}
+                onSelect={() =>
+                  onChange({ messages: [], promptTokens: 0, completionTokens: 0, lastError: null })
+                }
+              >
+                <Eraser />
+                Clear conversation
+              </DropdownMenuItem>
+              {!props.singlePane && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+                    <Trash2 />
+                    Remove pane
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
           </DropdownMenu>
-        )}
-
-        {!props.singlePane && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="flex shrink-0 items-center px-1.5">
-                <Switch
-                  aria-label="Include in broadcast"
-                  checked={pane.included}
-                  onCheckedChange={(checked) => onChange({ included: checked })}
-                />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              {pane.included ? "Included in broadcast" : "Excluded from broadcast"}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Pane options">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{pane.name}</DropdownMenuLabel>
-            <DropdownMenuItem
-              onSelect={() => {
-                setDraftName(pane.name);
-                setEditingName(true);
-              }}
-            >
-              <Pencil />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuCheckboxItem
-              checked={pane.memoryEnabled}
-              onCheckedChange={(checked) => onChange({ memoryEnabled: checked })}
-            >
-              <Brain />
-              Use session memory
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={pane.planMode}
-              onCheckedChange={(checked) => onChange({ planMode: checked })}
-            >
-              <ClipboardList />
-              Plan mode (read only)
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuItem onSelect={props.onChooseAgent}>
-              <Bot />
-              {props.agentName ? "Change agent…" : "Choose agent…"}
-            </DropdownMenuItem>
-            {props.agentName && (
-              <DropdownMenuItem onSelect={() => onChange({ agentPath: null })}>
-                Stop using {props.agentName}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={!lastAssistant}
-              onSelect={() => {
-                if (lastAssistant) void navigator.clipboard.writeText(lastAssistant.content);
-              }}
-            >
-              <Copy />
-              Copy last reply
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!hasPrompt} onSelect={onRetry}>
-              <RotateCcw />
-              Retry last prompt
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!hasPrompt} onSelect={props.onUndo}>
-              <Undo2 />
-              Undo last exchange
-            </DropdownMenuItem>
-            {props.onShowContext && (
-              <DropdownMenuItem onSelect={props.onShowContext}>
-                <ScanEye />
-                What the model saw
-              </DropdownMenuItem>
-            )}
-            {props.onExport && (
-              <>
-                <DropdownMenuItem
-                  disabled={pane.messages.length === 0}
-                  onSelect={() => props.onExport?.("markdown")}
-                >
-                  <FileDown />
-                  Export as Markdown…
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={pane.messages.length === 0}
-                  onSelect={() => props.onExport?.("html")}
-                >
-                  <FileDown />
-                  Export as web page…
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuItem disabled={!canCompact} onSelect={props.onCompact}>
-              <Shrink />
-              Compact conversation
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={pane.messages.length === 0 && pane.lastError === null}
-              onSelect={() =>
-                onChange({ messages: [], promptTokens: 0, completionTokens: 0, lastError: null })
-              }
-            >
-              <Eraser />
-              Clear conversation
-            </DropdownMenuItem>
-            {!props.singlePane && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={onRemove}>
-                  <Trash2 />
-                  Remove pane
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </header>
+        </>,
+      )}
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         {scrolledUp && (

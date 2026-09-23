@@ -27,7 +27,7 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import { Button } from "./components/ui/button";
-import { formatRelativeTime, formatTokens } from "./lib/format";
+import { formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import {
@@ -169,8 +169,6 @@ export function ActivityRail(props: {
   activeSessionName: string;
   // Live state of the open session; other sessions are not running.
   activeStatus: "running" | "waiting" | "idle";
-  activeProviderId?: string | undefined;
-  activeProjectPath?: string | undefined;
   onSelectSession(id: string): void;
   onCreateSession(): void;
   onDeleteSession(id: string): Promise<void>;
@@ -219,7 +217,7 @@ export function ActivityRail(props: {
   return (
     <nav
       aria-label="Primary activity"
-      className="flex min-h-0 flex-col overflow-y-auto border-r border-border bg-card"
+      className="row-span-2 flex min-h-0 flex-col overflow-y-auto border-r border-border bg-card"
     >
       <div className="flex flex-col gap-0.5 px-2.5 pt-4">
         <button
@@ -261,15 +259,7 @@ export function ActivityRail(props: {
           const isActive = summary.id === props.activeSessionId;
           const isConfirming = confirmDeleteId === summary.id;
           const name = (isActive ? props.activeSessionName : summary.name) || "Untitled session";
-          const providerId = isActive ? props.activeProviderId : summary.providerId;
-          const projectPath = isActive ? props.activeProjectPath : summary.projectPath;
           const status = isActive ? props.activeStatus : "idle";
-          const detail = [
-            providerId ? providerMeta(providerId).label : undefined,
-            projectPath?.split(/[\\/]/).filter(Boolean).at(-1),
-          ]
-            .filter(Boolean)
-            .join(" · ");
           return (
             <li key={summary.id} className="group relative">
               <button
@@ -286,7 +276,7 @@ export function ActivityRail(props: {
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                 )}
               >
-                <span className="relative grid size-3.5 shrink-0 place-items-center self-start pt-0.5">
+                <span className="relative grid size-3.5 shrink-0 place-items-center">
                   {status === "idle" ? (
                     <MessagesSquare
                       className={cn("size-3.5", isActive ? "text-primary" : "opacity-60")}
@@ -304,21 +294,13 @@ export function ActivityRail(props: {
                     />
                   )}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{name}</span>
-                  {(detail || status !== "idle") && (
-                    <span className="truncate text-[11px] text-muted-foreground">
-                      {status === "running"
-                        ? "Working…"
-                        : status === "waiting"
-                          ? "Needs your answer"
-                          : detail}
-                    </span>
-                  )}
-                </span>
-                <span className="shrink-0 self-start pt-px font-mono text-[10px] text-muted-foreground group-hover:invisible">
-                  {isActive ? "now" : formatRelativeTime(summary.updatedAt)}
-                </span>
+                {/* Only the topic shows; the dot beside it says when the session needs you. */}
+                <span className="min-w-0 flex-1 truncate">{name}</span>
+                {status !== "idle" && (
+                  <span className="sr-only">
+                    {status === "running" ? "Working" : "Needs your answer"}
+                  </span>
+                )}
               </button>
               <button
                 type="button"
@@ -703,7 +685,7 @@ export function BottomDock(props: {
       aria-label="Bottom panel"
       hidden={!open}
       className={cn(
-        "col-span-full grid min-h-0 grid-rows-[38px_minmax(0,1fr)] border-t border-border bg-card",
+        "col-start-2 grid min-h-0 grid-rows-[38px_minmax(0,1fr)] border-t border-border bg-card",
         tall ? "h-[72vh]" : "h-[clamp(200px,30vh,300px)]",
       )}
     >

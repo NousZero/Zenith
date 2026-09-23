@@ -140,27 +140,6 @@ describe("SQLite session store", () => {
     ]);
   });
 
-  it("lists what the first pane runs and where", async () => {
-    const store = createSessionStore(db);
-    await store.save(
-      makeSession({
-        panes: [
-          makePane({ id: "second", providerId: "gemini-cli" }),
-          makePane({ id: "first", providerId: "codex", projectPath: "/work/app" }),
-        ].reverse(),
-      }),
-    );
-    await expect(store.list()).resolves.toEqual([
-      {
-        id: "session-1",
-        name: "First session",
-        updatedAt: 1_000,
-        providerId: "codex",
-        projectPath: "/work/app",
-      },
-    ]);
-  });
-
   it("cascades a session delete to its panes and messages", async () => {
     const store = createSessionStore(db);
     await store.save(

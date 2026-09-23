@@ -64,8 +64,13 @@ test("a command reads as a terminal line, with its result under it", () => {
 });
 
 test("the composer states what a send will do, and queues while a reply is running", async () => {
+  // The pane renders its provider, model, and folder controls into this slot.
+  let slot: HTMLElement | null = null;
   render(
     <Composer
+      onControlsSlot={(element) => {
+        slot = element;
+      }}
       panes={[pane]}
       readyProviders={["claude-code"]}
       commands={[]}
@@ -79,8 +84,7 @@ test("the composer states what a send will do, and queues while a reply is runni
     />,
   );
 
-  expect(screen.getByText("Claude Code")).toBeInTheDocument();
-  expect(screen.getByText("demo-project")).toBeInTheDocument();
+  expect(slot).toBeInstanceOf(HTMLElement);
   expect(await screen.findByText("standard")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Queue" })).toBeInTheDocument();
   expect(screen.getByText("Queued · fix the build")).toBeInTheDocument();

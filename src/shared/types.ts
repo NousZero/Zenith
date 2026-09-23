@@ -294,9 +294,6 @@ export interface SessionSummary {
   id: string;
   name: string;
   updatedAt: number;
-  // From the session's first pane, so the session list can say what it runs where.
-  providerId?: string | undefined;
-  projectPath?: string | undefined;
 }
 
 export interface SessionState {
