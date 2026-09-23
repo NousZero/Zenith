@@ -73,7 +73,9 @@ import {
   RunInspector,
   TopBar,
   type ActivityId,
+  type DockTab,
 } from "./Workbench";
+import { ReviewBar } from "./AgentPanel";
 import type {
   ConnectionStatus,
   ImageAttachment,
@@ -135,6 +137,9 @@ export function App() {
   const [activity, setActivity] = useState<ActivityId>("workspace");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
   const [dockOpen, setDockOpen] = useState(false);
+  const [dockShowTab, setDockShowTab] = useState<{ tab: DockTab; at: number }>();
+  // Replies whose changes the user kept, so the review bar stops asking.
+  const [keptTurnIds, setKeptTurnIds] = useState<ReadonlySet<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [boardProject, setBoardProject] = useState<string | null>(null);
   const [botsOpen, setBotsOpen] = useState(false);
@@ -806,6 +811,7 @@ export function App() {
     </>
   );
 
+  const paneTurn = pane ? agentTurns[pane.id] : undefined;
   const workspaceView = (
     <>
       <div className="min-h-0 flex-1 bg-background">
@@ -870,6 +876,24 @@ export function App() {
           />
         )}
       </div>
+
+      {pane &&
+        paneTurn &&
+        !streamingPaneIds.has(pane.id) &&
+        !paneTurn.rolledBack &&
+        !keptTurnIds.has(paneTurn.turnId) && (
+          <ReviewBar
+            key={paneTurn.turnId}
+            turn={paneTurn}
+            onRollback={() => rollbackTurn(pane.id)}
+            onKeep={() => setKeptTurnIds((kept) => new Set(kept).add(paneTurn.turnId))}
+            onShowDiff={() => {
+              if (pane.projectPath) setDockProject(pane.projectPath);
+              setDockShowTab({ tab: "Git", at: Date.now() });
+              setDockOpen(true);
+            }}
+          />
+        )}
 
       <Composer
         panes={session.panes.slice(0, 1)}
@@ -1148,6 +1172,7 @@ export function App() {
         <BottomDock
           open={dockOpen}
           onOpenChange={setDockOpen}
+          showTab={dockShowTab}
           projects={projectPaths}
           projectPath={dockProjectPath}
           onProjectChange={setDockProject}

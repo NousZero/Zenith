@@ -607,7 +607,7 @@ export function RunInspector(props: {
 }
 
 const DOCK_TABS = ["Terminal", "Tests", "Git", "Logs", "Approvals"] as const;
-type DockTab = (typeof DOCK_TABS)[number];
+export type DockTab = (typeof DOCK_TABS)[number];
 
 function NoProject() {
   return (
@@ -631,8 +631,15 @@ export function BottomDock(props: {
   // Shown and hidden from the top bar; kept mounted while hidden so terminal output survives.
   open: boolean;
   onOpenChange(open: boolean): void;
+  // Asks the dock to switch tab; `at` makes a repeat request for the same tab count.
+  showTab?: { tab: DockTab; at: number } | undefined;
 }) {
   const [tab, setTab] = useState<DockTab>("Terminal");
+  const [seenShowTab, setSeenShowTab] = useState(props.showTab);
+  if (props.showTab !== seenShowTab) {
+    setSeenShowTab(props.showTab);
+    if (props.showTab) setTab(props.showTab.tab);
+  }
   const { open } = props;
   const setOpen = props.onOpenChange;
   const [tall, setTall] = useState(false);

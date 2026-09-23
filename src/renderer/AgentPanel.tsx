@@ -1,4 +1,13 @@
-import { CheckCircle2, Circle, CircleDot, History, ShieldCheck, Wand2 } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Circle,
+  CircleDot,
+  FileDiff,
+  History,
+  ShieldCheck,
+  Wand2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { gateFixPrompt } from "../shared/gates";
@@ -248,10 +257,7 @@ export function AgentPanel(props: {
   reviewer?: { providerId: string; modelId: string; label: string } | undefined;
 }) {
   const { turn } = props;
-  const [confirming, setConfirming] = useState(false);
   const changedFiles = turn.activities.filter((activity) => activity.checkpoint).length;
-  // With a snapshot, any action may have changed files (commands included).
-  const canUndo = changedFiles > 0 || (turn.snapshot && turn.activities.length > 0);
   if (turn.activities.length === 0 && turn.todos.length === 0) return null;
 
   return (
@@ -314,44 +320,102 @@ export function AgentPanel(props: {
         />
       )}
 
-      {canUndo && !props.streaming && (
-        <div className="flex items-center gap-2 border-t border-border pt-2">
-          {turn.rolledBack ? (
-            <span className="text-muted-foreground">
-              Restored {turn.rolledBack.length} {turn.rolledBack.length === 1 ? "file" : "files"} to
-              how {turn.rolledBack.length === 1 ? "it was" : "they were"} before this reply.
-            </span>
-          ) : (
-            <>
-              <span className="flex-1 text-muted-foreground">
-                {confirming
-                  ? turn.snapshot
-                    ? "Put the whole project back as it was before this reply? Anything changed since then, including your own edits, is lost."
-                    : "Put the changed files back as they were? Later edits to them are lost."
-                  : turn.snapshot
-                    ? "Everything this reply changed, including by commands, can be undone."
-                    : "Files changed by this reply can be restored."}
-              </span>
-              {confirming && (
-                <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
-                  Cancel
-                </Button>
-              )}
-              <Button
-                size="xs"
-                variant={confirming ? "destructive" : "outline"}
-                onClick={() => {
-                  if (!confirming) return setConfirming(true);
-                  setConfirming(false);
-                  void props.onRollback();
-                }}
+      {turn.rolledBack && (
+        <p className="border-t border-border pt-2 text-muted-foreground">
+          Restored {turn.rolledBack.length} {turn.rolledBack.length === 1 ? "file" : "files"} to how{" "}
+          {turn.rolledBack.length === 1 ? "it was" : "they were"} before this reply.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// What a finished reply changed, pinned above the composer until kept or undone, as in Cursor's
+// review bar. Undo is all-or-nothing: checkpoints restore per reply, not per hunk.
+export function ReviewBar(props: {
+  turn: AgentTurn;
+  onRollback(): Promise<void>;
+  onKeep(): void;
+  onShowDiff(): void;
+}) {
+  const { turn } = props;
+  const [confirming, setConfirming] = useState(false);
+  const files = turn.activities
+    .filter((activity) => activity.checkpoint)
+    .map((activity) => activity.title.replace(/^\S+\s+/, ""));
+  const names = [...new Set(files)];
+  // With a snapshot, any action may have changed files (commands included).
+  if (names.length === 0 && !(turn.snapshot && turn.activities.length > 0)) return null;
+  const summary =
+    names.length > 0
+      ? `${names.length} ${names.length === 1 ? "file" : "files"} changed`
+      : "The project may have changed";
+
+  return (
+    <div
+      role="region"
+      aria-label="Review changes"
+      className="flex items-center gap-2 border-t border-primary/25 bg-primary/[0.05] px-4 py-2 text-xs"
+    >
+      <FileDiff className="size-3.5 shrink-0 text-primary" aria-hidden />
+      {confirming ? (
+        <span className="min-w-0 flex-1 text-muted-foreground">
+          {turn.snapshot
+            ? "Put the whole project back as it was before this reply? Anything changed since, including your own edits, is lost."
+            : "Put the changed files back as they were? Later edits to them are lost."}
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 font-medium">{summary}</span>
+          <span className="flex min-w-0 gap-1 overflow-hidden">
+            {names.slice(0, 4).map((name) => (
+              <span
+                key={name}
+                title={name}
+                className="max-w-40 truncate border border-border bg-background/60 px-1.5 py-px font-mono text-[10px] text-muted-foreground"
               >
-                <History />
-                {confirming ? "Restore files" : "Undo file changes"}
-              </Button>
-            </>
-          )}
-        </div>
+                {name.split(/[\\/]/).at(-1)}
+              </span>
+            ))}
+            {names.length > 4 && (
+              <span className="font-mono text-[10px] text-muted-foreground">
+                +{names.length - 4}
+              </span>
+            )}
+          </span>
+        </span>
+      )}
+      {confirming ? (
+        <>
+          <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+          <Button
+            size="xs"
+            variant="destructive"
+            onClick={() => {
+              setConfirming(false);
+              void props.onRollback();
+            }}
+          >
+            <History />
+            Restore files
+          </Button>
+        </>
+      ) : (
+        <>
+          <Button size="xs" variant="ghost" onClick={props.onShowDiff}>
+            See diff
+          </Button>
+          <Button size="xs" variant="outline" onClick={() => setConfirming(true)}>
+            <History />
+            Undo all
+          </Button>
+          <Button size="xs" onClick={props.onKeep}>
+            <Check />
+            Keep
+          </Button>
+        </>
       )}
     </div>
   );
