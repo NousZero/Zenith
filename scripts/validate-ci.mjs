@@ -24,6 +24,8 @@ const expectedActions = new Set([
   "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
 ]);
 const expectedRuns = new Set([
+  // Node 24.17.0 ships npm 11.13.0; the manifest pins npm 11.17.0 exactly.
+  "npm install --global npm@11.17.0 --no-audit --no-fund",
   "npm ci --ignore-scripts --no-audit --no-fund",
   "npm run verify",
   // Lifecycle scripts stay off; the end-to-end job fetches only Electron's own binary.

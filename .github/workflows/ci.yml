@@ -46,6 +46,10 @@
           }
         },
         {
+          "name": "Use the pinned npm version",
+          "run": "npm install --global npm@11.17.0 --no-audit --no-fund"
+        },
+        {
           "name": "Install with lifecycle scripts disabled",
           "run": "npm ci --ignore-scripts --no-audit --no-fund"
         },
@@ -83,6 +87,10 @@
             "node-version-file": "package.json",
             "cache": "npm"
           }
+        },
+        {
+          "name": "Use the pinned npm version",
+          "run": "npm install --global npm@11.17.0 --no-audit --no-fund"
         },
         {
           "name": "Install with lifecycle scripts disabled",
