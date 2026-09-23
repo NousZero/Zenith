@@ -286,9 +286,15 @@ export function createSnapshotStore(options: {
         .catch(() => false);
       if (existedInTree) {
         await inTree(gitDir, projectPath, ["checkout", tree, "--", relativePath]);
-      } else {
-        await rm(resolve(projectPath, relativePath), { force: true });
+        return true;
       }
+      // Snapshots leave ignored files out, so an ignored path missing from the tree may well
+      // have existed before the reply (a .env, say). Only a path Git would have kept is deleted.
+      const ignored = await inTree(gitDir, projectPath, ["check-ignore", "-q", "--", relativePath])
+        .then(() => true)
+        .catch(() => false);
+      if (ignored) return false;
+      await rm(resolve(projectPath, relativePath), { force: true });
       return true;
     },
   };

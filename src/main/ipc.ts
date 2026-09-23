@@ -694,9 +694,10 @@ export function registerIpcHandlers(options: {
     "agent:rollbackFile",
     async (_event, payload: { turnId: unknown; projectPath: unknown; path: unknown }) => {
       const turnId = typeof payload.turnId === "string" ? payload.turnId : "";
-      const projectPath = typeof payload.projectPath === "string" ? payload.projectPath : "";
       const path = typeof payload.path === "string" ? payload.path : "";
-      if (!turnId || !projectPath || !path || !isInside(projectPath, path)) return false;
+      if (!turnId || !path) return false;
+      const projectPath = await projectArg(payload.projectPath);
+      if (!isInside(projectPath, path)) return false;
       const restored =
         (await projects.rollbackFile(turnId, resolve(projectPath, path))) ||
         (await snapshots.restoreFile(turnId, path));

@@ -168,6 +168,15 @@ describe("workspace, Git, and snapshots", () => {
     expect(await snapshots.restoreFile("no-such-turn", "src/a.txt")).toBe(false);
   });
 
+  it("never deletes an ignored file the snapshot left out", async () => {
+    await writeFile(join(project, ".gitignore"), "secret.env\n");
+    await writeFile(join(project, "secret.env"), "KEY=1\n");
+    const snapshots = createSnapshotStore({ db, git, directory: join(dir, "snapshots") });
+    expect(await snapshots.take("turn-1", project)).toBe(true);
+    expect(await snapshots.restoreFile("turn-1", "secret.env")).toBe(false);
+    expect(await readFile(join(project, "secret.env"), "utf8")).toBe("KEY=1\n");
+  });
+
   it("keeps file access inside the project folder", async () => {
     await symlink(dir, join(project, "escape"));
     await expect(insideProject(project, "../")).rejects.toThrow("outside the project");
