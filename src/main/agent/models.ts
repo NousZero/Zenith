@@ -3,6 +3,7 @@ import { anthropicContent, openAiContent } from "../providers/content";
 import { asRecord } from "../cli/cli-adapter";
 import { readSseLines } from "../providers/sse";
 import type { ToolSpec } from "./tools";
+import { providerFetch } from "../providers/http";
 
 export interface ToolCall {
   id: string;
@@ -48,7 +49,7 @@ export function openAiCompatibleModel(options: {
 }): ToolModel {
   return {
     async *stream(model, messages, tools, signal) {
-      const response = await fetch(`${options.baseUrl}/chat/completions`, {
+      const response = await providerFetch(`${options.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await options.headers()) },
         body: JSON.stringify({
@@ -195,7 +196,7 @@ export function anthropicModel(options: {
         }
       }
 
-      const response = await fetch(`${baseUrl}/messages`, {
+      const response = await providerFetch(`${baseUrl}/messages`, {
         method: "POST",
         headers: {
           "x-api-key": await options.apiKey(),

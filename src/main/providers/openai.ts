@@ -1,6 +1,7 @@
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../../shared/types";
 import { openAiContent } from "./content";
 import { readSseLines } from "./sse";
+import { providerFetch } from "./http";
 
 const API_BASE = "https://api.openai.com/v1";
 
@@ -10,7 +11,7 @@ export function createOpenAiAdapter(getApiKey: () => Promise<string>): ProviderA
 
     async listModels(): Promise<Model[]> {
       const apiKey = await getApiKey();
-      const response = await fetch(`${API_BASE}/models`, {
+      const response = await providerFetch(`${API_BASE}/models`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
       if (!response.ok) throw new Error(`OpenAI model list failed: ${response.status}`);
@@ -21,7 +22,7 @@ export function createOpenAiAdapter(getApiKey: () => Promise<string>): ProviderA
     },
 
     async validateCredential(cred: string): Promise<boolean> {
-      const response = await fetch(`${API_BASE}/models`, {
+      const response = await providerFetch(`${API_BASE}/models`, {
         headers: { Authorization: `Bearer ${cred}` },
       });
       return response.ok;
@@ -29,7 +30,7 @@ export function createOpenAiAdapter(getApiKey: () => Promise<string>): ProviderA
 
     async *sendMessage(req: SendMessageRequest): AsyncIterable<ChatChunk> {
       const apiKey = await getApiKey();
-      const response = await fetch(`${API_BASE}/chat/completions`, {
+      const response = await providerFetch(`${API_BASE}/chat/completions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,

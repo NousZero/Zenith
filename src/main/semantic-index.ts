@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { ChatRole, HistoryExcerpt, SemanticStatus } from "../shared/types";
+import { providerFetch } from "./providers/http";
 
 const SETTING_KEY = "semantic_search_model";
 const BATCH_SIZE = 32;
@@ -16,7 +17,7 @@ export type Embedder = (model: string, texts: string[]) => Promise<number[][]>;
 // Ollama's embedding endpoint; the model must be pulled first (e.g. nomic-embed-text).
 export function ollamaEmbedder(baseUrl = "http://127.0.0.1:11434"): Embedder {
   return async (model, texts) => {
-    const response = await fetch(`${baseUrl}/api/embed`, {
+    const response = await providerFetch(`${baseUrl}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, input: texts }),

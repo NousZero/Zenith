@@ -2,6 +2,7 @@ import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../.
 import { asRecord } from "../cli/cli-adapter";
 import { readSseLines } from "./sse";
 import { openAiContent } from "./content";
+import { providerFetch } from "./http";
 
 export interface LocalServerOptions {
   id: string;
@@ -17,7 +18,9 @@ export async function fetchLocalModels(
   baseUrl: string,
   timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<Model[]> {
-  const response = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(timeoutMs) });
+  const response = await providerFetch(`${baseUrl}/v1/models`, {
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   if (!response.ok) throw new Error(`Model list failed: HTTP ${response.status}`);
   const body = asRecord(await response.json().catch(() => undefined));
   const data = body?.["data"];
@@ -49,7 +52,7 @@ export function createLocalServerAdapter(options: LocalServerOptions): ProviderA
     async *sendMessage(req: SendMessageRequest): AsyncIterable<ChatChunk> {
       let response: Response;
       try {
-        response = await fetch(`${options.baseUrl}/v1/chat/completions`, {
+        response = await providerFetch(`${options.baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

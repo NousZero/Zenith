@@ -11,6 +11,7 @@ import {
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../shared/types";
 import { anthropicModel, openAiCompatibleModel, type ToolModel } from "./agent/models";
 import type { CredentialStore } from "./credential-store";
+import { providerFetch } from "./providers/http";
 
 type Stored = Omit<CustomProvider, "hasKey">;
 
@@ -50,7 +51,7 @@ export function customAdapter(provider: Stored, credentials: CredentialStore): P
     async listModels(): Promise<Model[]> {
       if (provider.models.length > 0) return provider.models.map((id) => ({ id, label: id }));
       const apiKey = await key();
-      const response = await fetch(`${provider.baseUrl}/models`, {
+      const response = await providerFetch(`${provider.baseUrl}/models`, {
         headers:
           provider.api === "anthropic"
             ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }

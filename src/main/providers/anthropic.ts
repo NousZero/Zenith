@@ -7,6 +7,7 @@ import type {
 } from "../../shared/types";
 import { anthropicContent } from "./content";
 import { readSseLines } from "./sse";
+import { providerFetch } from "./http";
 
 const API_BASE = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -38,7 +39,7 @@ export function createAnthropicAdapter(getApiKey: () => Promise<string>): Provid
     },
 
     async validateCredential(cred: string): Promise<boolean> {
-      const response = await fetch(`${API_BASE}/messages`, {
+      const response = await providerFetch(`${API_BASE}/messages`, {
         method: "POST",
         headers: {
           "x-api-key": cred,
@@ -53,7 +54,7 @@ export function createAnthropicAdapter(getApiKey: () => Promise<string>): Provid
     async *sendMessage(req: SendMessageRequest): AsyncIterable<ChatChunk> {
       const apiKey = await getApiKey();
       const { system, rest } = splitSystemPrompt(req.messages);
-      const response = await fetch(`${API_BASE}/messages`, {
+      const response = await providerFetch(`${API_BASE}/messages`, {
         method: "POST",
         headers: {
           "x-api-key": apiKey,

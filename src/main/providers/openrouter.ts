@@ -1,6 +1,7 @@
 import type { ChatChunk, Model, ProviderAdapter, SendMessageRequest } from "../../shared/types";
 import { openAiContent } from "./content";
 import { readSseLines } from "./sse";
+import { providerFetch } from "./http";
 
 const API_BASE = "https://openrouter.ai/api/v1";
 
@@ -9,14 +10,14 @@ export function createOpenRouterAdapter(getApiKey: () => Promise<string>): Provi
     id: "openrouter",
 
     async listModels(): Promise<Model[]> {
-      const response = await fetch(`${API_BASE}/models`);
+      const response = await providerFetch(`${API_BASE}/models`);
       if (!response.ok) throw new Error(`OpenRouter model list failed: ${response.status}`);
       const body = (await response.json()) as { data: { id: string; name: string }[] };
       return body.data.map((model) => ({ id: model.id, label: model.name }));
     },
 
     async validateCredential(cred: string): Promise<boolean> {
-      const response = await fetch(`${API_BASE}/auth/key`, {
+      const response = await providerFetch(`${API_BASE}/auth/key`, {
         headers: { Authorization: `Bearer ${cred}` },
       });
       return response.ok;
@@ -24,7 +25,7 @@ export function createOpenRouterAdapter(getApiKey: () => Promise<string>): Provi
 
     async *sendMessage(req: SendMessageRequest): AsyncIterable<ChatChunk> {
       const apiKey = await getApiKey();
-      const response = await fetch(`${API_BASE}/chat/completions`, {
+      const response = await providerFetch(`${API_BASE}/chat/completions`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
