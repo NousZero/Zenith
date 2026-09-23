@@ -245,7 +245,7 @@ function RestoreButton(props: { onRestore(): void }) {
       }}
       onBlur={() => setConfirming(false)}
       className={cn(
-        "absolute right-1 top-1 transition-opacity",
+        "mt-1 shrink-0 transition-opacity",
         confirming
           ? "opacity-100"
           : "text-muted-foreground opacity-0 group-hover/prompt:opacity-100 focus-visible:opacity-100",
@@ -586,18 +586,18 @@ export function Pane(props: {
               >
                 <SelectTrigger
                   aria-label="Model"
-                  className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 font-mono text-xs hover:bg-accent"
+                  className="h-8 min-w-0 flex-1 border-transparent bg-transparent px-2 text-[13px] hover:bg-accent"
                 >
                   <SelectValue placeholder={modelPlaceholder}>{modelLabel}</SelectValue>
                 </SelectTrigger>
                 <SelectContent className="min-w-[16rem]">
                   {models.map((model) => (
-                    <SelectItem key={model.id} value={model.id} className="font-mono text-xs">
+                    <SelectItem key={model.id} value={model.id} className="text-[13px]">
                       {model.label}
                     </SelectItem>
                   ))}
                   {pane.modelId && !models.some((model) => model.id === pane.modelId) && (
-                    <SelectItem value={pane.modelId} className="font-mono text-xs">
+                    <SelectItem value={pane.modelId} className="text-[13px]">
                       {pane.modelId}
                     </SelectItem>
                   )}
@@ -840,13 +840,13 @@ export function Pane(props: {
                 </p>
                 <ul className="flex max-w-md flex-col gap-2 text-left text-xs text-muted-foreground">
                   <li className="flex items-baseline gap-2.5">
-                    <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
+                    <kbd className="w-9 shrink-0 rounded border border-border px-1 text-center font-mono text-[10px]">
                       /
                     </kbd>
                     Run a skill or command, or type /help for everything Zenith can do.
                   </li>
                   <li className="flex items-baseline gap-2.5">
-                    <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">
+                    <kbd className="w-9 shrink-0 rounded border border-border px-1 text-center font-mono text-[10px]">
                       {navigator.userAgent.includes("Mac") ? "⌘K" : "Ctrl K"}
                     </kbd>
                     Search or ask about every past session.
@@ -869,29 +869,23 @@ export function Pane(props: {
               />
             )
           ) : (
-            <div className="flex flex-col gap-4">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
               {pane.messages.map((message, index) =>
                 message.role === "user" ? (
-                  // The prompt stays in the scrollback as its own band, the way a shell keeps the
-                  // command you typed above its output.
-                  <div
-                    key={message.id}
-                    className="group/prompt relative flex max-w-full gap-2.5 border-l-2 border-primary/60 bg-secondary/40 py-1.5 pl-2.5 pr-3 text-[13px] leading-relaxed text-foreground"
-                  >
+                  // Your prompt sits on the right as a bubble, as in Cursor; the reply reads as
+                  // plain text below it.
+                  <div key={message.id} className="group/prompt flex items-start justify-end gap-2">
                     {props.onRestore && !streaming && (
                       <RestoreButton onRestore={() => props.onRestore?.(message.id)} />
                     )}
-                    <span aria-hidden className="select-none font-mono text-primary">
-                      ❯
-                    </span>
-                    <div className="flex min-w-0 flex-col gap-2">
+                    <div className="flex min-w-0 max-w-[85%] flex-col gap-2 rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-[13.5px] leading-relaxed text-foreground">
                       {message.images?.length ? (
                         <span className="flex flex-wrap gap-1.5">
                           {message.images.map((image) => (
                             <AttachmentImage
                               key={image.id}
                               id={image.id}
-                              className="max-h-40 max-w-60 border border-border object-contain"
+                              className="max-h-40 max-w-60 rounded-lg border border-border object-contain"
                             />
                           ))}
                         </span>
@@ -1032,7 +1026,7 @@ export function Pane(props: {
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-border p-2">
+      <footer className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-0 pt-1 text-muted-foreground">
         {replyOpen && (
           <form
             className="relative mb-1.5"
@@ -1124,7 +1118,7 @@ export function Pane(props: {
           </span>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex shrink-0 cursor-default items-center gap-1.5 font-mono tabular-nums">
+              <span className="flex shrink-0 cursor-default items-center gap-1.5 text-[11.5px] tabular-nums">
                 {contextShare !== undefined && (
                   <span
                     role="meter"

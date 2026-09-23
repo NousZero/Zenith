@@ -60,7 +60,7 @@ function Fact(props: {
       ) : (
         <span className={cn("size-1.5 shrink-0 rounded-full", props.dotClass)} />
       )}
-      <span className="truncate font-mono">{props.children}</span>
+      <span className="truncate">{props.children}</span>
     </span>
   );
 }
@@ -268,7 +268,7 @@ export function Composer(props: {
   }
 
   return (
-    <div className="relative shrink-0 border-t border-border bg-background px-4 pb-4 pt-3">
+    <div className="relative mx-auto w-full max-w-3xl shrink-0 px-4 pb-4 pt-2">
       {menu.length > 0 && (
         <ul
           id="composer-command-menu"
@@ -355,7 +355,7 @@ export function Composer(props: {
         </ul>
       )}
       <div
-        className="rounded-lg border border-input bg-card transition-colors duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25"
+        className="rounded-xl border border-input bg-card shadow-lg shadow-black/25 transition-colors duration-150 focus-within:border-ring/70 focus-within:ring-2 focus-within:ring-ring/20"
         onDragOver={(event) => {
           if ([...event.dataTransfer.items].some((item) => item.type.startsWith("image/"))) {
             event.preventDefault();

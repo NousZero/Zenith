@@ -304,7 +304,7 @@ export function AgentPanel(props: {
   if (turn.activities.length === 0 && turn.todos.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2 border-l-2 border-border bg-muted/20 py-2 pl-3 pr-2.5 text-xs">
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-xs">
       {turn.todos.length > 0 && (
         <ul aria-label="Agent tasks" className="flex flex-col gap-1">
           {turn.todos.map((todo, index) => {
@@ -437,7 +437,7 @@ export function ReviewBar(props: {
     <div
       role="region"
       aria-label="Review changes"
-      className="flex items-center gap-2 border-t border-primary/25 bg-primary/[0.05] px-4 py-2 text-xs"
+      className="mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-[calc(48rem-2rem)] items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-3 py-2 text-xs"
     >
       <FileDiff className="size-3.5 shrink-0 text-primary" aria-hidden />
       {confirming ? (
@@ -514,7 +514,7 @@ export function TodoStrip({ todos }: { todos: readonly AgentTodo[] }) {
     todos.find((todo) => todo.status === "in_progress") ??
     todos.find((todo) => todo.status === "pending");
   return (
-    <div className="border-t border-border bg-card/60 px-4 py-1.5 text-xs">
+    <div className="mx-auto mb-1 w-[calc(100%-2rem)] max-w-[calc(48rem-2rem)] rounded-lg border border-border bg-card px-3 py-1.5 text-xs">
       {open && (
         <ul aria-label="Plan" className="mb-1.5 flex flex-col gap-1 pt-1">
           {todos.map((todo, index) => {

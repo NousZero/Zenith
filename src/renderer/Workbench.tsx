@@ -210,10 +210,10 @@ export function ActivityRail(props: {
 
   const railButton = (active: boolean) =>
     cn(
-      "relative flex w-full cursor-pointer items-center gap-2.5 border px-2.5 py-2 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       active
-        ? "border-primary/25 bg-primary/[0.06] text-foreground before:absolute before:inset-y-[7px] before:-left-[11px] before:w-0.5 before:bg-primary"
-        : "border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        ? "bg-accent font-medium text-foreground"
+        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
     );
 
   return (
@@ -280,7 +280,7 @@ export function ActivityRail(props: {
                   props.onSelect("workspace");
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 pr-8 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -307,7 +307,7 @@ export function ActivityRail(props: {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{name}</span>
                   {(detail || status !== "idle") && (
-                    <span className="truncate font-mono text-[10px] text-muted-foreground">
+                    <span className="truncate text-[11px] text-muted-foreground">
                       {status === "running"
                         ? "Working…"
                         : status === "waiting"
