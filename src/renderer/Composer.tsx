@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Mic,
   Monitor,
+  Plus,
   ShieldCheck,
   Square,
   X,
@@ -18,6 +19,12 @@ import { postureOf, type Posture } from "../shared/permissions";
 import type { ImageAttachment, PaneState } from "../shared/types";
 import { completeCommandName, parseSlashCommand, type Command } from "./commands";
 import { Button } from "./components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
 import { cn } from "./lib/utils";
 import { DEFAULT_CLI_MODEL_ID, providerMeta } from "./providers";
 import { useDictation } from "./useDictation";
@@ -560,24 +567,46 @@ export function Composer(props: {
               event.target.value = "";
             }}
           />
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Attach images"
-            title="Attach images (or paste or drop them)"
-            onClick={() => fileRef.current?.click()}
-          >
-            <ImagePlus />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Attach a screenshot"
-            title="Attach a picture of your screen"
-            onClick={() => void attachScreenshot()}
-          >
-            <Monitor />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Add to message"
+                title="Add to message"
+              >
+                <Plus />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top">
+              <DropdownMenuItem onSelect={() => fileRef.current?.click()}>
+                <ImagePlus />
+                Images…
+                <span className="ml-auto pl-4 text-[11px] text-muted-foreground">
+                  or paste, drop
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void attachScreenshot()}>
+                <Monitor />
+                Screenshot of the screen
+              </DropdownMenuItem>
+              {projectPath && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setPrompt(prompt.trim() ? `${prompt.trimEnd()} @` : "@");
+                    loadFiles("@");
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  <FileText />
+                  File from the project
+                  <span className="ml-auto pl-4 font-mono text-[11px] text-muted-foreground">
+                    @
+                  </span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="icon-sm"
             variant={dictation.recording ? "secondary" : "ghost"}
