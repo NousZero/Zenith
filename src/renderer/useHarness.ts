@@ -205,10 +205,18 @@ export function useHarness(
         setAgentTurns((current) => {
           const turn = current[paneId];
           if (turn?.turnId !== requestId) return current;
+          const timed = (previous: AgentActivity | undefined, next: AgentActivity) => {
+            const startedAt = previous?.startedAt ?? Date.now();
+            const finished = next.status !== "running" && next.status !== "awaiting-approval";
+            const endedAt = finished ? (previous?.endedAt ?? Date.now()) : undefined;
+            return { ...next, startedAt, ...(endedAt === undefined ? {} : { endedAt }) };
+          };
           const activities = activity
             ? turn.activities.some((item) => item.id === activity.id)
-              ? turn.activities.map((item) => (item.id === activity.id ? activity : item))
-              : [...turn.activities, activity]
+              ? turn.activities.map((item) =>
+                  item.id === activity.id ? timed(item, activity) : item,
+                )
+              : [...turn.activities, timed(undefined, activity)]
             : turn.activities;
           return {
             ...current,

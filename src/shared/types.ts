@@ -76,6 +76,9 @@ export interface AgentActivity {
   detail?: string;
   // Set when Zenith saved a file before this call changed it.
   checkpoint?: boolean;
+  // Renderer-side timing, in epoch milliseconds, for the duration shown on each line.
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface AgentTodo {

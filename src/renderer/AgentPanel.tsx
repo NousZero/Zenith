@@ -5,10 +5,19 @@ import {
   Circle,
   CircleDot,
   FileDiff,
+  FilePlus,
+  FileText,
+  FolderTree,
+  Globe,
   History,
   ListChecks,
+  Pencil,
+  Search,
   ShieldCheck,
+  SquareTerminal,
   Wand2,
+  Wrench,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -49,6 +58,33 @@ const STATUS: Record<AgentActivity["status"], { className: string; label: string
 
 // A tool call reads like a terminal line: a status bullet, the verb, then what it acted on.
 // Commands get their own "$" line, and every result sits under "⎿", the way the CLIs print it.
+const VERB_ICONS: Record<string, LucideIcon> = {
+  Run: SquareTerminal,
+  Read: FileText,
+  Edit: Pencil,
+  Write: FilePlus,
+  Search: Search,
+  Grep: Search,
+  Glob: Search,
+  List: FolderTree,
+  Fetch: Globe,
+  Browse: Globe,
+  Open: Globe,
+  Update: ListChecks,
+};
+
+function duration(activity: AgentActivity): string {
+  if (activity.startedAt === undefined || activity.endedAt === undefined) return "";
+  const ms = activity.endedAt - activity.startedAt;
+  // Instant calls say nothing useful; skip them rather than print "0ms" on every line.
+  if (ms < 100) return "";
+  return ms < 1_000
+    ? `${ms}ms`
+    : ms < 60_000
+      ? `${(ms / 1_000).toFixed(1)}s`
+      : `${Math.round(ms / 60_000)}m`;
+}
+
 function ActivityRow({ activity }: { activity: AgentActivity }) {
   const status = STATUS[activity.status];
   const run = /^Run (in sandbox: |outside sandbox: )?/.exec(activity.title);
@@ -57,18 +93,22 @@ function ActivityRow({ activity }: { activity: AgentActivity }) {
   const target = run
     ? (run[1] ?? "").replace(":", "").trim()
     : activity.title.split(" ").slice(1).join(" ");
+  const Icon = VERB_ICONS[verb] ?? Wrench;
+  const took = duration(activity);
 
   return (
     <li className="activity-row flex flex-col gap-0.5 font-mono text-[11px] leading-relaxed">
-      <span className="flex items-baseline gap-2">
+      <span className="flex items-center gap-2">
         <span
           aria-label={status.label}
-          className={cn("size-1.5 shrink-0 translate-y-[-1px] rounded-full", status.className)}
+          className={cn("size-1.5 shrink-0 rounded-full", status.className)}
         />
-        <span className="min-w-0 truncate">
+        <Icon className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">
           <span className="font-semibold text-foreground">{verb}</span>
           {target && <span className="text-muted-foreground"> {target}</span>}
         </span>
+        {took && <span className="shrink-0 text-[10px] text-muted-foreground/80">{took}</span>}
       </span>
       {command && (
         <span className="flex gap-1.5 pl-3.5 text-muted-foreground">
