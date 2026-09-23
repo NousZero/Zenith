@@ -90,6 +90,23 @@ describe("workspace, Git, and snapshots", () => {
     await expect(workspace.addWorktree(project, "bad..name")).rejects.toThrow("not a valid branch");
   });
 
+  it.skipIf(process.platform === "win32")(
+    "runs Git with prompts, pagers, optional locks, and replace refs turned off",
+    async () => {
+      const fake = join(dir, "fake-git.sh");
+      await writeFile(
+        fake,
+        '#!/bin/sh\necho "$GIT_TERMINAL_PROMPT $GCM_INTERACTIVE $GIT_OPTIONAL_LOCKS $GIT_NO_REPLACE_OBJECTS $GIT_PAGER"\n',
+        { mode: 0o755 },
+      );
+      const runner = createGitRunner(
+        async () => fake,
+        () => ({ PATH: process.env["PATH"] ?? "" }),
+      );
+      expect((await runner(["status"], { cwd: dir })).trim()).toBe("0 Never 0 1 cat");
+    },
+  );
+
   it("lists project files for mentions, leaving ignored ones out", async () => {
     const workspace = createGitWorkspace(git);
     expect(await workspace.files(project)).toEqual([]);

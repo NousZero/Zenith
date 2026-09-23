@@ -22,6 +22,18 @@ const SAFE_CONFIG = [
   "core.pager=cat",
 ];
 
+// From Agamemnon's hardened Git inspector: background status and diffs must not take the index
+// lock the user's own Git needs, follow replace refs, ask for credentials, or open a pager.
+// Global config stays, since commits need the user's name and email.
+export const SAFE_ENV: Readonly<Record<string, string>> = {
+  GIT_TERMINAL_PROMPT: "0",
+  GCM_INTERACTIVE: "Never",
+  GIT_OPTIONAL_LOCKS: "0",
+  GIT_NO_REPLACE_OBJECTS: "1",
+  GIT_PAGER: "cat",
+  PAGER: "cat",
+};
+
 export type GitRunner = (
   args: string[],
   options: { cwd: string; env?: NodeJS.ProcessEnv },
@@ -40,7 +52,7 @@ export function createGitRunner(
         [...SAFE_CONFIG, ...args],
         {
           cwd: options.cwd,
-          env: { ...env(), GIT_TERMINAL_PROMPT: "0", ...options.env },
+          env: { ...env(), ...SAFE_ENV, ...options.env },
           timeout: GIT_TIMEOUT_MS,
           maxBuffer: MAX_BUFFER,
           windowsHide: true,
