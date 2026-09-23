@@ -112,8 +112,8 @@
   --danger: 8 55% 66%;
   --success: 92 16% 66%;
   --warning: 38 59% 62%;
-  --border: 45 7% 15%;
-  --input: 45 7% 21%;
+  --border: 45 7% 23%;
+  --input: 45 7% 32%;
   --ring: 39 67% 63%;
   --radius: 0.25rem;
 
@@ -151,8 +151,8 @@
   --danger: 0 91% 71%;
   --success: 142 69% 58%;
   --warning: 38 92% 60%;
-  --border: 222 13% 18%;
-  --input: 222 13% 22%;
+  --border: 222 13% 26%;
+  --input: 222 13% 36%;
   --ring: 217 91% 60%;
 }
 :root[data-theme="nord"] {
@@ -176,8 +176,8 @@
   --danger: 354 50% 66%;
   --success: 92 28% 65%;
   --warning: 40 71% 73%;
-  --border: 220 16% 28%;
-  --input: 220 16% 34%;
+  --border: 220 16% 32%;
+  --input: 220 16% 42%;
   --ring: 193 43% 67%;
 }
 :root[data-theme="solarized"] {
@@ -201,8 +201,8 @@
   --danger: 1 71% 62%;
   --success: 68 80% 42%;
   --warning: 45 100% 45%;
-  --border: 192 40% 22%;
-  --input: 192 40% 28%;
+  --border: 192 40% 27%;
+  --input: 192 40% 35%;
   --ring: 205 69% 55%;
 }
 :root[data-theme="rose"] {
@@ -226,8 +226,8 @@
   --danger: 343 76% 70%;
   --success: 189 43% 73%;
   --warning: 35 88% 72%;
-  --border: 249 15% 24%;
-  --input: 249 15% 30%;
+  --border: 249 15% 30%;
+  --input: 249 15% 41%;
   --ring: 267 57% 78%;
 }
 :root[data-theme="parchment"] {
@@ -251,8 +251,8 @@
   --danger: 6 60% 40%;
   --success: 100 35% 28%;
   --warning: 32 80% 34%;
-  --border: 40 15% 80%;
-  --input: 40 12% 70%;
+  --border: 40 15% 72%;
+  --input: 40 12% 58%;
   --ring: 32 70% 40%;
 }
 :root[data-theme="paper"] {
@@ -276,8 +276,8 @@
   --danger: 0 70% 42%;
   --success: 142 60% 28%;
   --warning: 32 90% 34%;
-  --border: 220 13% 85%;
-  --input: 220 13% 76%;
+  --border: 220 13% 77%;
+  --input: 220 13% 64%;
   --ring: 221 83% 50%;
 }
 
@@ -296,6 +296,21 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-size: 14px;
+    line-height: 1.55;
+  }
+
+  /* A designed focus ring for anything that doesn't manage its own focus-visible state
+     (plain links in markdown, native elements outside the component library). Components
+     that set their own focus-visible:outline-none + ring utilities take precedence. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  input,
+  textarea {
+    caret-color: hsl(var(--primary));
   }
 
   /* Code comparisons need literal characters, not ligatures like => rendered as an arrow. */
@@ -313,9 +328,14 @@
     background: hsl(var(--primary) / 0.35);
   }
 
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
 
   ::-webkit-scrollbar-track {
@@ -324,7 +344,7 @@
 
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
-    border: 2px solid transparent;
+    border: 1px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
   }
@@ -436,7 +456,7 @@
   overflow-x: auto;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
-  background: hsl(var(--background));
+  background: hsl(var(--secondary));
   padding: 0.75em 0.9em;
   font-family: var(--font-mono);
   font-size: 12.5px;
