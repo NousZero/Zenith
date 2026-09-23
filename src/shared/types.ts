@@ -437,6 +437,8 @@ export interface ZenithApi {
   workspace: {
     list(projectPath: string, relativePath: string): Promise<WorkspaceEntry[]>;
     read(projectPath: string, relativePath: string): Promise<WorkspaceFile>;
+    // Relative paths of the project's files, for `@` mentions; empty outside Git.
+    files(projectPath: string): Promise<string[]>;
     gitStatus(projectPath: string): Promise<GitStatus>;
     gitDiff(projectPath: string, path: string, state: string): Promise<string>;
     // Stages every change and commits it; returns the short commit hash.

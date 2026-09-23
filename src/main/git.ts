@@ -79,8 +79,21 @@ export function parseStatus(output: string): GitStatus["files"] {
   return files;
 }
 
+// Enough for `@` completion in large repositories without shipping a huge list to the renderer.
+const MAX_LISTED_FILES = 20_000;
+
 export function createGitWorkspace(git: GitRunner) {
   return {
+    // Project files Git knows or would add (ignored ones left out), for `@` mentions.
+    // ponytail: Git projects only; a folder without Git gets no completions.
+    async files(projectPath: string): Promise<string[]> {
+      const output = await git(
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"],
+        { cwd: projectPath },
+      ).catch(() => "");
+      return output.split(NUL).filter(Boolean).slice(0, MAX_LISTED_FILES);
+    },
+
     async status(projectPath: string): Promise<GitStatus> {
       const inside = await git(["rev-parse", "--is-inside-work-tree"], { cwd: projectPath })
         .then((output) => output.trim() === "true")

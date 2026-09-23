@@ -135,6 +135,8 @@ const zenithApi: ZenithApi = {
       ipcRenderer.invoke("workspace:list", { projectPath, relativePath }),
     read: (projectPath: string, relativePath: string): Promise<WorkspaceFile> =>
       ipcRenderer.invoke("workspace:read", { projectPath, relativePath }),
+    files: (projectPath: string): Promise<string[]> =>
+      ipcRenderer.invoke("workspace:files", projectPath),
     gitStatus: (projectPath: string): Promise<GitStatus> =>
       ipcRenderer.invoke("workspace:gitStatus", projectPath),
     gitDiff: (projectPath: string, path: string, state: string): Promise<string> =>

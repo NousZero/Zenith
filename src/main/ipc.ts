@@ -675,6 +675,9 @@ export function registerIpcHandlers(options: {
     async (_event, payload: { projectPath: unknown; relativePath: unknown }) =>
       readWorkspaceFile(await projectArg(payload.projectPath), String(payload.relativePath ?? "")),
   );
+  handle("workspace:files", async (_event, projectPath: unknown) =>
+    gitWorkspace.files(await projectArg(projectPath)),
+  );
   handle("workspace:gitStatus", async (_event, projectPath: unknown) =>
     gitWorkspace.status(await projectArg(projectPath)),
   );

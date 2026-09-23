@@ -90,6 +90,19 @@ describe("workspace, Git, and snapshots", () => {
     await expect(workspace.addWorktree(project, "bad..name")).rejects.toThrow("not a valid branch");
   });
 
+  it("lists project files for mentions, leaving ignored ones out", async () => {
+    const workspace = createGitWorkspace(git);
+    expect(await workspace.files(project)).toEqual([]);
+    execFileSync("git", ["init", "-q"], { cwd: project });
+    await writeFile(join(project, ".gitignore"), "secret.env\n");
+    await writeFile(join(project, "secret.env"), "KEY=1\n");
+    expect((await workspace.files(project)).sort()).toEqual([
+      ".gitignore",
+      "keep.txt",
+      "src/a.txt",
+    ]);
+  });
+
   it("restores files changed, created, and deleted after a snapshot", async () => {
     const snapshots = createSnapshotStore({ db, git, directory: join(dir, "snapshots") });
     expect(await snapshots.take("turn-1", project)).toBe(true);

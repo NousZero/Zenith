@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Clock,
+  FileText,
   FolderOpen,
   ImagePlus,
   Mic,
@@ -12,6 +13,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
+import { insertMention, mentionQuery, rankFiles } from "../shared/mentions";
 import { postureOf, type Posture } from "../shared/permissions";
 import type { ImageAttachment, PaneState } from "../shared/types";
 import { completeCommandName, parseSlashCommand, type Command } from "./commands";
@@ -87,6 +89,9 @@ export function Composer(props: {
   const [imageError, setImageError] = useState("");
   const [sandboxed, setSandboxed] = useState(false);
   const [posture, setPosture] = useState<Posture | undefined>(undefined);
+  // Project files for `@` mentions, fetched the first time one is typed in a project.
+  const [projectFiles, setProjectFiles] = useState<{ project: string; files: string[] }>();
+  const projectPath = props.panes.length === 1 ? props.panes[0]?.projectPath : undefined;
 
   // What a send is allowed to do, read once so the composer can say it before anything happens.
   useEffect(() => {
@@ -168,6 +173,27 @@ export function Composer(props: {
       : [];
   const active = Math.min(activeIndex, Math.max(menu.length - 1, 0));
   const exactCommand = slash && props.commands.find((command) => command.name === slash.name);
+  const mention = slash || !projectPath ? undefined : mentionQuery(prompt);
+  const fileMenu =
+    mention !== undefined && projectFiles && projectFiles.project === projectPath
+      ? rankFiles(projectFiles.files, mention, MAX_MENU_ITEMS)
+      : [];
+  const activeFile = Math.min(activeIndex, Math.max(fileMenu.length - 1, 0));
+
+  function loadFiles(nextPrompt: string) {
+    if (!projectPath || projectFiles?.project === projectPath) return;
+    if (mentionQuery(nextPrompt) === undefined) return;
+    void window.zenith.workspace
+      .files(projectPath)
+      .then((files) => setProjectFiles({ project: projectPath, files }))
+      .catch(() => setProjectFiles({ project: projectPath, files: [] }));
+  }
+
+  function pickFile(path: string) {
+    setActiveIndex(0);
+    setPrompt(insertMention(prompt, path));
+    textareaRef.current?.focus();
+  }
 
   const included = props.panes.filter((pane) => pane.included);
   const ready = included.filter(
@@ -263,6 +289,41 @@ export function Composer(props: {
           ))}
         </ul>
       )}
+      {fileMenu.length > 0 && (
+        <ul
+          id="composer-file-menu"
+          role="listbox"
+          aria-label="Project files"
+          className="absolute bottom-full left-4 right-4 mb-2 max-h-72 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 shadow-xl shadow-black/40"
+        >
+          {fileMenu.map((path, index) => {
+            const slashAt = path.lastIndexOf("/");
+            return (
+              <li
+                key={path}
+                id={`composer-file-${index}`}
+                role="option"
+                aria-selected={index === activeFile}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  pickFile(path);
+                }}
+                onMouseMove={() => setActiveIndex(index)}
+                className={cn(
+                  "flex cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 text-[13px]",
+                  index === activeFile && "bg-accent text-accent-foreground",
+                )}
+              >
+                <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="shrink-0 font-mono text-xs">{path.slice(slashAt + 1)}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                  {slashAt > 0 ? path.slice(0, slashAt) : ""}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div
         className="rounded-lg border border-input bg-card transition-colors duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25"
         onDragOver={(event) => {
@@ -320,9 +381,15 @@ export function Composer(props: {
           id={COMPOSER_INPUT_ID}
           aria-label="Broadcast prompt"
           role="combobox"
-          aria-expanded={menu.length > 0}
-          aria-controls="composer-command-menu"
-          aria-activedescendant={menu[active] ? `composer-command-${menu[active].name}` : undefined}
+          aria-expanded={menu.length > 0 || fileMenu.length > 0}
+          aria-controls={fileMenu.length > 0 ? "composer-file-menu" : "composer-command-menu"}
+          aria-activedescendant={
+            fileMenu.length > 0
+              ? `composer-file-${activeFile}`
+              : menu[active]
+                ? `composer-command-${menu[active].name}`
+                : undefined
+          }
           rows={1}
           value={prompt}
           onPaste={(event) => {
@@ -334,11 +401,29 @@ export function Composer(props: {
           }}
           onChange={(event) => {
             setPrompt(event.target.value);
+            loadFiles(event.target.value);
             setUnknownCommand(undefined);
             setActiveIndex(0);
             resize();
           }}
           onKeyDown={(event) => {
+            if (fileMenu.length > 0) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                setActiveIndex((activeFile + step + fileMenu.length) % fileMenu.length);
+                return;
+              }
+              if (
+                (event.key === "Enter" && !event.metaKey && !event.ctrlKey) ||
+                event.key === "Tab"
+              ) {
+                event.preventDefault();
+                const path = fileMenu[activeFile];
+                if (path) pickFile(path);
+                return;
+              }
+            }
             if (menu.length > 0 && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
               event.preventDefault();
               const step = event.key === "ArrowDown" ? 1 : -1;
@@ -357,7 +442,9 @@ export function Composer(props: {
           }}
           placeholder={
             props.panes.length === 1
-              ? "Message… · type / for commands"
+              ? projectPath
+                ? "Message… · / for commands · @ for files"
+                : "Message… · type / for commands"
               : "Ask every included pane… · type / for commands"
           }
           className="block max-h-[200px] min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
