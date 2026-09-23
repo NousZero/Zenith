@@ -236,6 +236,41 @@ describe("Telegram transport", () => {
   });
 });
 
+describe("Telegram transport redirects", () => {
+  it("refuses a redirect from Telegram's API, so the bot token goes nowhere else", async () => {
+    let base = "";
+    let elsewhereHits = 0;
+    const server = createServer((request, response) => {
+      if ((request.url ?? "").includes("/elsewhere")) {
+        elsewhereHits++;
+        response.end(JSON.stringify({ ok: true, result: {} }));
+      } else {
+        response.writeHead(307, { location: `${base}/elsewhere` }).end();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const transport = createTelegramTransport({ botToken: "TOKEN" }, base);
+    const states: string[] = [];
+    await new Promise<void>((resolve) =>
+      transport.start({
+        onMessage: () => undefined,
+        onState: (state, detail) => {
+          states.push(detail);
+          if (state === "error") resolve();
+        },
+      }),
+    );
+    transport.stop();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+
+    expect(states.at(-1)).toMatch(/redirect/);
+    expect(elsewhereHits).toBe(0);
+  });
+});
+
 describe("WhatsApp webhook", () => {
   it("verifies the subscription, rejects unsigned posts, and accepts signed messages", async () => {
     const port = 20_000 + Math.floor(Math.random() * 20_000);

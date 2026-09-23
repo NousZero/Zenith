@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
 
 import { asRecord } from "../cli/cli-adapter";
+import { noRedirectFetch } from "../providers/http";
 import type { BotTransport, IncomingBotMessage, TransportFactory } from "./bot-manager";
 
 const RECONNECT_MS = 5_000;
@@ -66,14 +67,14 @@ export function createTelegramTransport(
           try {
             if (!connected) {
               const me = await readJson(
-                await fetch(`${base}/getMe`, { signal: controller.signal }),
+                await noRedirectFetch(`${base}/getMe`, { signal: controller.signal }),
                 "Telegram sign-in",
               );
               connected = true;
               onState("connected", `Connected as @${str(asRecord(me["result"])?.["username"])}`);
             }
             const body = await readJson(
-              await fetch(
+              await noRedirectFetch(
                 `${base}/getUpdates?timeout=50&offset=${offset}&allowed_updates=["message"]`,
                 {
                   signal: controller.signal,
@@ -100,7 +101,7 @@ export function createTelegramTransport(
     stop: () => controller.abort(),
     async send(chatId, text) {
       await readJson(
-        await fetch(`${base}/sendMessage`, {
+        await noRedirectFetch(`${base}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text }),
@@ -143,7 +144,10 @@ export const createDiscordTransport: TransportFactory = (secrets) => {
         if (controller.signal.aborted) return;
         try {
           const gateway = await readJson(
-            await fetch(`${DISCORD_API}/gateway/bot`, { headers, signal: controller.signal }),
+            await noRedirectFetch(`${DISCORD_API}/gateway/bot`, {
+              headers,
+              signal: controller.signal,
+            }),
             "Discord sign-in",
           );
           let sequence: number | null = null;
@@ -201,7 +205,7 @@ export const createDiscordTransport: TransportFactory = (secrets) => {
     },
     async send(chatId, text) {
       await readJson(
-        await fetch(`${DISCORD_API}/channels/${encodeURIComponent(chatId)}/messages`, {
+        await noRedirectFetch(`${DISCORD_API}/channels/${encodeURIComponent(chatId)}/messages`, {
           method: "POST",
           headers,
           body: JSON.stringify({ content: text }),
@@ -240,7 +244,7 @@ export const createSlackTransport: TransportFactory = (secrets) => {
   let socket: WebSocket | undefined;
   const slack = async (method: string, token: string, body: Json) => {
     const result = await readJson(
-      await fetch(`https://slack.com/api/${method}`, {
+      await noRedirectFetch(`https://slack.com/api/${method}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -408,7 +412,7 @@ export function createWhatsAppTransport(
       server?.close();
     },
     async send(chatId, text) {
-      const response = await fetch(
+      const response = await noRedirectFetch(
         `${graphBase}/${WHATSAPP_GRAPH_VERSION}/${encodeURIComponent(secrets["phoneNumberId"] ?? "")}/messages`,
         {
           method: "POST",
@@ -466,13 +470,13 @@ export const createSignalTransport: TransportFactory = (secrets) => {
             const base = httpBase(secrets["apiUrl"], "The signal-cli REST API address");
             if (!connected) {
               await readJson(
-                await fetch(`${base}/v1/about`, { signal: controller.signal }),
+                await noRedirectFetch(`${base}/v1/about`, { signal: controller.signal }),
                 "Signal connection",
               );
               connected = true;
               onState("connected", `Connected to signal-cli REST API as ${number}`);
             }
-            const response = await fetch(
+            const response = await noRedirectFetch(
               `${base}/v1/receive/${encodeURIComponent(number)}?timeout=20`,
               { signal: controller.signal },
             );
@@ -499,11 +503,14 @@ export const createSignalTransport: TransportFactory = (secrets) => {
     stop: () => controller.abort(),
     async send(chatId, text) {
       await readJson(
-        await fetch(`${httpBase(secrets["apiUrl"], "The signal-cli REST API address")}/v2/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, number, recipients: [chatId] }),
-        }),
+        await noRedirectFetch(
+          `${httpBase(secrets["apiUrl"], "The signal-cli REST API address")}/v2/send`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text, number, recipients: [chatId] }),
+          },
+        ),
         "Signal message",
       );
     },
@@ -588,7 +595,7 @@ export const createHomeAssistantTransport: TransportFactory = (secrets) => {
     },
     async send(chatId, text) {
       await readJson(
-        await fetch(
+        await noRedirectFetch(
           `${httpBase(secrets["url"], "The Home Assistant address")}/api/events/zenith_reply`,
           {
             method: "POST",

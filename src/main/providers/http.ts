@@ -1,11 +1,9 @@
 import { normalizeBaseUrl } from "../../shared/custom-providers";
 
-// From Agamemnon's provider connection policy, the two rules that stop a key going astray.
-// Redirects are refused: fetch drops Authorization on a cross-site redirect but not x-api-key,
-// so a redirect could hand an Anthropic-style key to another host. And every request, not just
-// the saved settings, must be https unless it stays on this computer or the local network.
-export async function providerFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  normalizeBaseUrl(new URL(url).origin);
+// Shared with the bot transports: fetch drops Authorization on a cross-site redirect but keeps
+// other auth (a custom header, a token in the URL path), so a redirect could hand it to another
+// host. Refusing to follow one is the one rule every outbound request in Zenith needs.
+export async function noRedirectFetch(url: string, init: RequestInit = {}): Promise<Response> {
   try {
     return await fetch(url, { ...init, redirect: "error" });
   } catch (error: unknown) {
@@ -17,4 +15,11 @@ export async function providerFetch(url: string, init: RequestInit = {}): Promis
     }
     throw error;
   }
+}
+
+// Model providers additionally require https unless the address stays on this computer or the
+// local network, since these are user-entered API base URLs rather than fixed platform hosts.
+export async function providerFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  normalizeBaseUrl(new URL(url).origin);
+  return noRedirectFetch(url, init);
 }
