@@ -210,7 +210,7 @@ function GateStrip(props: {
             title={gate.detail}
             onClick={() => setOpen(open === gate.id ? null : gate.id)}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               GATE_STATE[gate.state],
               open === gate.id && "bg-accent",
             )}
@@ -225,7 +225,7 @@ function GateStrip(props: {
             title={`Reviewed by ${review.reviewer}`}
             onClick={() => setOpen(open === "review" ? null : "review")}
             className={cn(
-              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.06em] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               review.verdict === "clean"
                 ? GATE_STATE.pass
                 : review.verdict === "findings"
@@ -554,7 +554,7 @@ export function TodoStrip({ todos }: { todos: readonly AgentTodo[] }) {
         className="flex w-full cursor-pointer items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ListChecks className="size-3.5 shrink-0 text-primary" aria-hidden />
-        <span className="shrink-0 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
+        <span className="shrink-0 text-[11.5px] text-muted-foreground">
           {done}/{todos.length}
         </span>
         <span aria-hidden className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">

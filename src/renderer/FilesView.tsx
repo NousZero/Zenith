@@ -238,7 +238,7 @@ export function FilesView(props: { projectPath: string }) {
         {path === null ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <FolderOpen className="size-8 text-muted-foreground" aria-hidden />
-            <p className="font-serif text-xl">Read your project</p>
+            <p className="font-serif text-xl font-semibold tracking-tight">Read your project</p>
             <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
               Markdown opens as a page, web pages and images render as they look, and everything
               else opens as text. Previews run offline: they can load files from{" "}
@@ -285,7 +285,7 @@ export function FilesView(props: { projectPath: string }) {
                       aria-selected={view === entry.id}
                       onClick={() => setView(entry.id)}
                       className={cn(
-                        "cursor-pointer border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "cursor-pointer border px-1.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         view === entry.id
                           ? "border-primary/50 bg-primary/[0.08] text-foreground"
                           : "border-border text-muted-foreground hover:text-foreground",

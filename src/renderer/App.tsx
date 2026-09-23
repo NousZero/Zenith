@@ -801,10 +801,10 @@ export function App() {
   );
   const sessionActions = (
     <>
-      <span className="mr-2 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
-        {formatTokens(totalTokens)} TOKENS
+      <span className="mr-2 text-[11.5px] text-muted-foreground">
+        {formatTokens(totalTokens)} tokens
         {session.personalityId
-          ? ` · ${(PERSONALITIES.find((item) => item.id === session.personalityId)?.label ?? session.personalityId).toUpperCase()}`
+          ? ` · ${PERSONALITIES.find((item) => item.id === session.personalityId)?.label ?? session.personalityId}`
           : ""}
       </span>
       <MemoryPopover
@@ -943,7 +943,7 @@ export function App() {
               aria-label="Project folder"
               value={dockProjectPath ?? ""}
               onChange={(event) => setDockProject(event.target.value)}
-              className="max-w-[20rem] cursor-pointer truncate border border-transparent bg-transparent font-serif text-lg hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="max-w-[20rem] cursor-pointer truncate border border-transparent bg-transparent font-serif text-lg font-semibold hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {projectPaths.map((path) => (
                 <option key={path} value={path} title={path}>
@@ -994,7 +994,7 @@ export function App() {
             aria-selected={settingsTab === tab.id}
             onClick={() => setSettingsTab(tab.id)}
             className={cn(
-              "-mb-px shrink-0 cursor-pointer border-b-2 px-2.5 py-2.5 font-mono text-[11px] tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "-mb-px shrink-0 cursor-pointer border-b-2 px-2.5 py-2.5 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               settingsTab === tab.id
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",

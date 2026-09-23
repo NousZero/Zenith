@@ -75,15 +75,15 @@ export function TopBar(props: {
       <div className="flex h-full min-w-0 items-center gap-2.5 border-r border-border px-[18px]">
         <span
           aria-hidden
-          className="grid size-[25px] shrink-0 place-items-center border border-primary/80 font-serif text-sm text-primary"
+          className="grid size-[22px] shrink-0 place-items-center rounded-md bg-primary font-serif text-[12px] font-bold text-primary-foreground"
         >
           Z
         </span>
-        <span className="font-mono text-[13px] font-bold tracking-[0.09em]">ZENITH</span>
+        <span className="text-[13px] font-semibold">Zenith</span>
       </div>
       <nav
         aria-label="Location"
-        className="flex min-w-0 items-center gap-2 px-[18px] font-mono text-[10px] tracking-[0.09em] text-muted-foreground"
+        className="flex min-w-0 items-center gap-2 px-[18px] text-[11.5px] text-muted-foreground"
       >
         {props.crumbs.map((crumb, index) => (
           <span key={`${index}-${crumb}`} className="flex min-w-0 items-center gap-2">
@@ -92,10 +92,7 @@ export function TopBar(props: {
               props.title
             ) : (
               <span
-                className={cn(
-                  "truncate uppercase",
-                  index === props.crumbs.length - 1 && "text-foreground",
-                )}
+                className={cn("truncate", index === props.crumbs.length - 1 && "text-foreground")}
               >
                 {crumb}
               </span>
@@ -105,7 +102,7 @@ export function TopBar(props: {
       </nav>
       <div className="flex items-center gap-1 pr-3">
         {props.actions}
-        <span className="mr-3 flex items-center gap-2 font-mono text-[10px] tracking-[0.09em] text-success">
+        <span className="mr-3 flex items-center gap-2 text-[11.5px] text-success">
           <span
             aria-hidden
             className={cn(
@@ -114,7 +111,7 @@ export function TopBar(props: {
               props.streaming && "motion-safe:animate-pulse",
             )}
           />
-          LOCAL · {props.connectedCount} CONNECTED
+          {props.connectedCount} connected
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -158,7 +155,7 @@ export function TopBar(props: {
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[340px] rounded-none p-0">{props.inspector}</PopoverContent>
+          <PopoverContent className="w-[340px] p-0">{props.inspector}</PopoverContent>
         </Popover>
       </div>
     </header>
@@ -382,8 +379,8 @@ export function PageHeader(props: {
   if (props.compact) {
     return (
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-5">
-        <p className="eyebrow shrink-0 text-primary">{props.eyebrow}</p>
-        <div className="min-w-0 flex-1 font-serif text-lg leading-tight text-foreground">
+        <p className="eyebrow shrink-0 text-muted-foreground">{props.eyebrow}</p>
+        <div className="min-w-0 flex-1 font-serif text-base font-semibold leading-tight tracking-tight text-foreground">
           {props.title}
         </div>
         {props.description && (
@@ -398,8 +395,8 @@ export function PageHeader(props: {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-background/95 px-5 py-3">
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="eyebrow text-primary">{props.eyebrow}</p>
-        <div className="min-w-0 font-serif text-2xl leading-tight text-foreground">
+        <p className="eyebrow text-muted-foreground">{props.eyebrow}</p>
+        <div className="min-w-0 font-serif text-xl font-semibold leading-tight tracking-tight text-foreground">
           {props.title}
         </div>
         {props.description && <p className="text-xs text-muted-foreground">{props.description}</p>}
@@ -450,12 +447,12 @@ export function RunInspector(props: {
     >
       <div className="flex min-h-[63px] items-center justify-between border-b border-border px-4 py-3">
         <div>
-          <p className="eyebrow text-success">Run inspector</p>
+          <p className="text-[13px] font-semibold text-foreground">Run inspector</p>
           <p className="text-[13px] text-foreground">Current state</p>
         </div>
         <span
           className={cn(
-            "border px-1.5 py-1 font-mono text-[10px] tracking-[0.09em]",
+            "border px-1.5 py-1 text-[11.5px]",
             state === "IDLE" ? "border-success/35 text-success" : "border-primary/40 text-primary",
           )}
         >
@@ -468,7 +465,7 @@ export function RunInspector(props: {
           type="button"
           onClick={props.onShowContext}
           disabled={!pane}
-          className="w-full cursor-pointer border border-border px-3 py-1.5 text-left font-mono text-[10px] tracking-[0.09em] text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="w-full cursor-pointer border border-border px-3 py-1.5 text-left text-[11.5px] text-primary transition-colors hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           WHAT THE MODEL SAW →
         </button>
@@ -477,7 +474,7 @@ export function RunInspector(props: {
       <section className="m-4 flex items-center gap-3 border border-primary/20 bg-popover p-3.5">
         <div
           aria-hidden
-          className="grid size-9 shrink-0 place-items-center border border-primary/80 font-serif text-primary"
+          className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/15 font-serif font-bold text-primary"
         >
           Z
         </div>
@@ -571,7 +568,7 @@ export function RunInspector(props: {
           <button
             type="button"
             onClick={props.onOpenSettings}
-            className="cursor-pointer font-mono text-[10px] tracking-[0.09em] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="cursor-pointer text-[11.5px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             MANAGE
           </button>
@@ -730,7 +727,7 @@ export function BottomDock(props: {
               onClick={() => select(label)}
               onKeyDown={(event) => move(event, index)}
               className={cn(
-                "-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 px-2.5 font-mono text-[11px] tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 px-2.5 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 tab === label
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground",
@@ -898,7 +895,7 @@ export function BottomDock(props: {
                 <p className="eyebrow text-muted-foreground">Approval queue</p>
                 <p className="font-mono text-[13px]">{pending} pending</p>
               </div>
-              <span className="border border-border px-1.5 py-1 font-mono text-[10px] tracking-[0.09em] text-muted-foreground">
+              <span className="border border-border px-1.5 py-1 text-[11.5px] text-muted-foreground">
                 POLICY ENFORCED
               </span>
             </div>
@@ -941,11 +938,7 @@ export function RolePage(props: { personalityId: string; onChange(id: string): v
             >
               <span className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">{personality.label}</span>
-                {active && (
-                  <span className="font-mono text-[10px] tracking-[0.09em] text-primary">
-                    ACTIVE
-                  </span>
-                )}
+                {active && <span className="text-[11.5px] text-primary">ACTIVE</span>}
               </span>
               <span className="text-xs leading-relaxed text-muted-foreground">
                 {personality.prompt || "Models answer with only the soul, profile, and memory."}

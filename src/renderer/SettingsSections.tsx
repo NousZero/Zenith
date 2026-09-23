@@ -59,7 +59,7 @@ export function PersonaFileEditor(props: {
 
   return (
     <section className="flex flex-col gap-2.5 border border-border bg-card p-4">
-      <h3 className="eyebrow text-success">
+      <h3 className="text-[13px] font-semibold text-foreground">
         {props.title} ({props.file})
       </h3>
       <p className="text-xs leading-relaxed text-muted-foreground">{props.description}</p>
@@ -176,7 +176,7 @@ export function Section(props: { title: string; children: ReactNode; actions?: R
   return (
     <section className="flex flex-col gap-2.5 border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="eyebrow text-success">{props.title}</h3>
+        <h3 className="text-[13px] font-semibold text-foreground">{props.title}</h3>
         {props.actions}
       </div>
       {props.children}
@@ -639,9 +639,7 @@ export function AuditSection() {
                   minute: "2-digit",
                 })}
               </time>
-              <span className="uppercase tracking-[0.06em] text-muted-foreground">
-                {AUDIT_KIND_LABEL[entry.kind]}
-              </span>
+              <span className="text-muted-foreground">{AUDIT_KIND_LABEL[entry.kind]}</span>
               <span className="truncate" title={entry.projectPath ?? undefined}>
                 {entry.summary}
               </span>

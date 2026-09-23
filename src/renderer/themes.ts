@@ -1,9 +1,16 @@
 // Color themes; the palettes live in globals.css under :root[data-theme="…"].
 
 export const THEMES = [
+  // The id stays "graphite" so a saved choice carries over to the new default look.
   {
     id: "graphite",
-    label: "Graphite",
+    label: "Carbon",
+    scheme: "dark",
+    swatches: ["#171717", "#7d72f5", "#5fd08a"],
+  },
+  {
+    id: "amber",
+    label: "Amber",
     scheme: "dark",
     swatches: ["#0d0f0e", "#d3a553", "#a7b69a"],
   },

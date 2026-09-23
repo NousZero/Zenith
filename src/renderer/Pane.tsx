@@ -831,11 +831,13 @@ export function Pane(props: {
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
                 <span
                   aria-hidden
-                  className="grid size-12 place-items-center border border-primary/70 font-serif text-xl text-primary"
+                  className="grid size-12 place-items-center rounded-xl bg-primary/15 font-serif text-xl font-bold text-primary"
                 >
                   Z
                 </span>
-                <p className="font-serif text-2xl text-foreground">What are we working on?</p>
+                <p className="font-serif text-2xl font-semibold tracking-tight text-foreground">
+                  What are we working on?
+                </p>
                 <ul className="flex max-w-md flex-col gap-2 text-left text-xs text-muted-foreground">
                   <li className="flex items-baseline gap-2.5">
                     <kbd className="w-9 shrink-0 border border-border px-1 text-center font-mono text-[10px]">

@@ -40,7 +40,7 @@ export function DialogHeader({ className, ...props }: ComponentProps<"div">) {
 export function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
-      className={cn("font-serif text-xl font-normal text-foreground", className)}
+      className={cn("font-serif text-lg font-semibold tracking-tight text-foreground", className)}
       {...props}
     />
   );
