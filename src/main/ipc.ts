@@ -11,13 +11,13 @@ import {
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { access, readFile, stat, writeFile } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 
 import { writeFileAtomic } from "./atomic-write";
 
 import { createAcpAdapter } from "./acp/acp-adapter";
-import { runClaudeAgent } from "./agent/claude-agent";
+import { isInside, runClaudeAgent } from "./agent/claude-agent";
 import { formatFile } from "./agent/format";
 import { createLanguageServers, servedByLanguageServer } from "./agent/lsp";
 import { runGates } from "./gates";
@@ -686,6 +686,30 @@ export function registerIpcHandlers(options: {
     }
     return restored;
   });
+
+  // Undoes one file of a turn: the checkpoint row when there is one, else the file's path from
+  // the Git snapshot. Leaves the rest of the turn's checkpoints and snapshot in place, so Undo
+  // all can still restore whatever wasn't undone here.
+  handle(
+    "agent:rollbackFile",
+    async (_event, payload: { turnId: unknown; projectPath: unknown; path: unknown }) => {
+      const turnId = typeof payload.turnId === "string" ? payload.turnId : "";
+      const projectPath = typeof payload.projectPath === "string" ? payload.projectPath : "";
+      const path = typeof payload.path === "string" ? payload.path : "";
+      if (!turnId || !projectPath || !path || !isInside(projectPath, path)) return false;
+      const restored =
+        (await projects.rollbackFile(turnId, resolve(projectPath, path))) ||
+        (await snapshots.restoreFile(turnId, path));
+      if (restored) {
+        auditRecord({
+          kind: "rollback",
+          summary: `Undid changes to ${path}`,
+          outcome: "1 file restored",
+        });
+      }
+      return restored;
+    },
+  );
 
   const projectArg = async (value: unknown): Promise<string> => {
     const path = await validProjectPath(value);

@@ -161,6 +161,27 @@ describe("project store", () => {
     await expect(store.rollback("t")).resolves.toEqual([]);
   });
 
+  it("rolls back one file at a time, and forgets it for later rollbacks", async () => {
+    const store = createProjectStore(db);
+    const created = join(dir, "new.txt");
+    const edited = join(dir, "edited.txt");
+    await writeFile(edited, "v1");
+    await store.saveCheckpoint("t", dir, created);
+    await store.saveCheckpoint("t", dir, edited);
+    await writeFile(created, "made by agent");
+    await writeFile(edited, "v2");
+
+    expect(await store.rollbackFile("t", edited)).toBe(true);
+    expect(await readFile(edited, "utf8")).toBe("v1");
+    await expect(readFile(created, "utf8")).resolves.toBe("made by agent");
+
+    // Already used, so a second call finds nothing and a whole-turn rollback leaves it alone.
+    expect(await store.rollbackFile("t", edited)).toBe(false);
+    expect(await store.rollbackFile("t", created)).toBe(true);
+    await expect(readFile(created, "utf8")).rejects.toThrow();
+    expect(await store.rollback("t")).toEqual([]);
+  });
+
   it("moves synced cards as todo statuses change and lets users manage cards", () => {
     const store = createProjectStore(db);
     store.syncTodos("/p", [{ content: "Task", status: "pending" }]);

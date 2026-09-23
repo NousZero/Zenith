@@ -622,6 +622,24 @@ export function useHarness(
     [agentTurns, updatePane],
   );
 
+  // Restores one file the pane's latest reply changed, without touching its other files.
+  const rollbackFile = useCallback(
+    async (paneId: string, path: string): Promise<boolean> => {
+      const turn = agentTurns[paneId];
+      const pane = session.panes.find((candidate) => candidate.id === paneId);
+      if (!turn || !pane?.projectPath || streamState.current.has(paneId)) return false;
+      try {
+        return await window.zenith.projects.rollbackFile(turn.turnId, pane.projectPath, path);
+      } catch (error: unknown) {
+        updatePane(paneId, {
+          lastError: `Could not undo file changes: ${describeSendError(error)}`,
+        });
+        return false;
+      }
+    },
+    [agentTurns, session.panes, updatePane],
+  );
+
   // Puts the project back as it was before messageId ran, undoing every later reply newest first,
   // and cuts the conversation back to before it. Returns the prompt so it can be edited and resent.
   const restoreTo = useCallback(
@@ -673,6 +691,7 @@ export function useHarness(
     streamingPaneIds,
     agentTurns,
     rollbackTurn,
+    rollbackFile,
     compactingPaneIds,
     compactPane,
     synthesize,

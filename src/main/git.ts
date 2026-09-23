@@ -269,6 +269,28 @@ export function createSnapshotStore(options: {
       statements.remove.run(turnId);
       return changed;
     },
+
+    // Restores one path from the snapshot tree, leaving the rest of the snapshot in place so
+    // Undo all can still restore whatever wasn't undone here. False when the turn has no snapshot.
+    async restoreFile(turnId: string, relativePath: string): Promise<boolean> {
+      const row = statements.get.get(turnId) as
+        { project_path: string; git_dir: string; tree: string } | undefined;
+      if (!row) return false;
+      const { project_path: projectPath, git_dir: gitDir, tree } = row;
+      const existedInTree = await inTree(gitDir, projectPath, [
+        "cat-file",
+        "-e",
+        `${tree}:${relativePath}`,
+      ])
+        .then(() => true)
+        .catch(() => false);
+      if (existedInTree) {
+        await inTree(gitDir, projectPath, ["checkout", tree, "--", relativePath]);
+      } else {
+        await rm(resolve(projectPath, relativePath), { force: true });
+      }
+      return true;
+    },
   };
 }
 

@@ -17,6 +17,7 @@ import {
   SquareTerminal,
   Wand2,
   Wrench,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -372,22 +373,61 @@ export function AgentPanel(props: {
   );
 }
 
+// One file chip in the review bar, with its own hover undo control and two-step confirm.
+function FileChip(props: { name: string; onUndo(): Promise<boolean> }) {
+  const [confirming, setConfirming] = useState(false);
+  const label = props.name.split(/[\\/]/).at(-1);
+  return (
+    <span
+      title={props.name}
+      className="group/chip flex max-w-40 items-center gap-0.5 border border-border bg-background/60 py-px pl-1.5 pr-0.5 font-mono text-[10px] text-muted-foreground"
+    >
+      <span className="truncate">{label}</span>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className={cn(
+          "size-3.5 opacity-0 group-hover/chip:opacity-100",
+          confirming && "text-destructive opacity-100",
+        )}
+        aria-label={
+          confirming ? `Confirm undo of changes to ${props.name}` : `Undo changes to ${props.name}`
+        }
+        onClick={async () => {
+          if (!confirming) {
+            setConfirming(true);
+            return;
+          }
+          setConfirming(false);
+          await props.onUndo();
+        }}
+      >
+        <X />
+      </Button>
+    </span>
+  );
+}
+
 // What a finished reply changed, pinned above the composer until kept or undone, as in Cursor's
-// review bar. Undo is all-or-nothing: checkpoints restore per reply, not per hunk.
+// review bar. Undo all is all-or-nothing; each chip can also be undone on its own.
 export function ReviewBar(props: {
   turn: AgentTurn;
   onRollback(): Promise<void>;
+  onRollbackFile(path: string): Promise<boolean>;
   onKeep(): void;
   onShowDiff(): void;
 }) {
   const { turn } = props;
   const [confirming, setConfirming] = useState(false);
+  const [undoneFiles, setUndoneFiles] = useState<ReadonlySet<string>>(new Set());
   const files = turn.activities
     .filter((activity) => activity.checkpoint)
     .map((activity) => activity.title.replace(/^\S+\s+/, ""));
-  const names = [...new Set(files)];
-  // With a snapshot, any action may have changed files (commands included).
-  if (names.length === 0 && !(turn.snapshot && turn.activities.length > 0)) return null;
+  const names = [...new Set(files)].filter((name) => !undoneFiles.has(name));
+  // With a snapshot, any action may have changed files (commands included). Once every named
+  // file has been undone one at a time, the bar disappears just as it would after Undo all.
+  if (names.length === 0 && (files.length > 0 || !(turn.snapshot && turn.activities.length > 0)))
+    return null;
   const summary =
     names.length > 0
       ? `${names.length} ${names.length === 1 ? "file" : "files"} changed`
@@ -411,13 +451,15 @@ export function ReviewBar(props: {
           <span className="shrink-0 font-medium">{summary}</span>
           <span className="flex min-w-0 gap-1 overflow-hidden">
             {names.slice(0, 4).map((name) => (
-              <span
+              <FileChip
                 key={name}
-                title={name}
-                className="max-w-40 truncate border border-border bg-background/60 px-1.5 py-px font-mono text-[10px] text-muted-foreground"
-              >
-                {name.split(/[\\/]/).at(-1)}
-              </span>
+                name={name}
+                onUndo={async () => {
+                  const ok = await props.onRollbackFile(name);
+                  if (ok) setUndoneFiles((current) => new Set(current).add(name));
+                  return ok;
+                }}
+              />
             ))}
             {names.length > 4 && (
               <span className="font-mono text-[10px] text-muted-foreground">

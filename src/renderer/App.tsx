@@ -158,6 +158,7 @@ export function App() {
     streamingPaneIds,
     agentTurns,
     rollbackTurn,
+    rollbackFile,
     compactingPaneIds,
     compactPane,
     permissions,
@@ -900,6 +901,7 @@ export function App() {
             key={paneTurn.turnId}
             turn={paneTurn}
             onRollback={() => rollbackTurn(pane.id)}
+            onRollbackFile={(path) => rollbackFile(pane.id, path)}
             onKeep={() => setKeptTurnIds((kept) => new Set(kept).add(paneTurn.turnId))}
             onShowDiff={() => {
               if (pane.projectPath) setDockProject(pane.projectPath);

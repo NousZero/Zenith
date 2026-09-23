@@ -91,6 +91,8 @@ const zenithApi: ZenithApi = {
   projects: {
     choose: (): Promise<string | null> => ipcRenderer.invoke("projects:choose"),
     rollback: (turnId: string): Promise<string[]> => ipcRenderer.invoke("agent:rollback", turnId),
+    rollbackFile: (turnId: string, projectPath: string, path: string): Promise<boolean> =>
+      ipcRenderer.invoke("agent:rollbackFile", { turnId, projectPath, path }),
     listCards: (projectPath: string): Promise<BoardCard[]> =>
       ipcRenderer.invoke("board:list", projectPath),
     saveCard: (card: {

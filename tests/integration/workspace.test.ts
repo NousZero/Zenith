@@ -149,6 +149,25 @@ describe("workspace, Git, and snapshots", () => {
     await expect(readFile(join(project, ".git", "HEAD"), "utf8")).rejects.toThrow();
   });
 
+  it("restores one path from a snapshot, leaving the rest for a later Undo all", async () => {
+    const snapshots = createSnapshotStore({ db, git, directory: join(dir, "snapshots") });
+    expect(await snapshots.take("turn-1", project)).toBe(true);
+
+    await writeFile(join(project, "src", "a.txt"), "changed by a command\n");
+    await writeFile(join(project, "created.txt"), "new\n");
+
+    expect(await snapshots.restoreFile("turn-1", "src/a.txt")).toBe(true);
+    expect(await readFile(join(project, "src", "a.txt"), "utf8")).toBe("one\n");
+    // A file the reply created has no place in the tree, so it's deleted rather than checked out.
+    expect(await snapshots.restoreFile("turn-1", "created.txt")).toBe(true);
+    await expect(readFile(join(project, "created.txt"), "utf8")).rejects.toThrow();
+    // The snapshot itself is untouched, so a whole-turn restore is still possible afterward.
+    expect(snapshots.has("turn-1")).toBe(true);
+    expect(await snapshots.restore("turn-1")).toEqual([]);
+
+    expect(await snapshots.restoreFile("no-such-turn", "src/a.txt")).toBe(false);
+  });
+
   it("keeps file access inside the project folder", async () => {
     await symlink(dir, join(project, "escape"));
     await expect(insideProject(project, "../")).rejects.toThrow("outside the project");

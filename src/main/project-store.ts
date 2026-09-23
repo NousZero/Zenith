@@ -28,6 +28,10 @@ export function createProjectStore(db: DatabaseSync, now: () => number = Date.no
       "SELECT file_path, before_content, existed FROM checkpoints WHERE turn_id = ? ORDER BY id DESC",
     ),
     deleteCheckpoints: db.prepare("DELETE FROM checkpoints WHERE turn_id = ?"),
+    checkpointForFile: db.prepare(
+      "SELECT before_content, existed FROM checkpoints WHERE turn_id = ? AND file_path = ?",
+    ),
+    deleteCheckpoint: db.prepare("DELETE FROM checkpoints WHERE turn_id = ? AND file_path = ?"),
     cards: db.prepare(
       `SELECT id, project_path, title, status, updated_at FROM board_cards
        WHERE project_path = ? ORDER BY created_at`,
@@ -102,6 +106,24 @@ export function createProjectStore(db: DatabaseSync, now: () => number = Date.no
       }
       statements.deleteCheckpoints.run(turnId);
       return rows.map((row) => row.file_path);
+    },
+
+    // Restores one file from its checkpoint and forgets it, so a later Undo all doesn't restore
+    // it twice. Returns false when the turn has no checkpoint for this file.
+    async rollbackFile(turnId: string, filePath: string): Promise<boolean> {
+      const row = statements.checkpointForFile.get(turnId, filePath) as
+        { before_content: string | null; existed: number } | undefined;
+      if (!row) return false;
+      if (row.existed === 1) {
+        await mkdir(dirname(filePath), { recursive: true });
+        await writeFileAtomic(filePath, row.before_content ?? "");
+      } else {
+        await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      }
+      statements.deleteCheckpoint.run(turnId, filePath);
+      return true;
     },
 
     listCards,

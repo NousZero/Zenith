@@ -418,6 +418,8 @@ export interface ZenithApi {
     choose(): Promise<string | null>;
     // Restores files an agent changed during one reply; returns the restored paths.
     rollback(turnId: string): Promise<string[]>;
+    // Restores one file of a turn; returns whether it found something to restore.
+    rollbackFile(turnId: string, projectPath: string, path: string): Promise<boolean>;
     listCards(projectPath: string): Promise<BoardCard[]>;
     saveCard(card: {
       id?: string;
