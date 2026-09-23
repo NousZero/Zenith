@@ -27,6 +27,7 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import { Button } from "./components/ui/button";
+import type { ExtraId } from "./extras";
 import { formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
@@ -175,6 +176,7 @@ export function ActivityRail(props: {
   onOpenHistory(): void;
   onOpenSchedule(): void;
   onOpenBots(): void;
+  extras: Record<ExtraId, boolean>;
 }) {
   const [summaries, setSummaries] = useState<SessionSummary[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -238,15 +240,17 @@ export function ActivityRail(props: {
           <FolderTree className="size-4" aria-hidden />
           Files
         </button>
-        <button
-          type="button"
-          aria-current={props.active === "goals" ? "page" : undefined}
-          onClick={() => props.onSelect("goals")}
-          className={railButton(props.active === "goals")}
-        >
-          <Target className="size-4" aria-hidden />
-          Goals
-        </button>
+        {props.extras.goals && (
+          <button
+            type="button"
+            aria-current={props.active === "goals" ? "page" : undefined}
+            onClick={() => props.onSelect("goals")}
+            className={railButton(props.active === "goals")}
+          >
+            <Target className="size-4" aria-hidden />
+            Goals
+          </button>
+        )}
         <button type="button" onClick={props.onCreateSession} className={railButton(false)}>
           <Plus className="size-4" aria-hidden />
           New session
@@ -328,14 +332,18 @@ export function ActivityRail(props: {
             {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl"} K
           </kbd>
         </button>
-        <button type="button" className={railButton(false)} onClick={props.onOpenSchedule}>
-          <CalendarClock className="size-4" aria-hidden />
-          Scheduled tasks
-        </button>
-        <button type="button" className={railButton(false)} onClick={props.onOpenBots}>
-          <Bot className="size-4" aria-hidden />
-          Bots
-        </button>
+        {props.extras.schedule && (
+          <button type="button" className={railButton(false)} onClick={props.onOpenSchedule}>
+            <CalendarClock className="size-4" aria-hidden />
+            Scheduled tasks
+          </button>
+        )}
+        {props.extras.bots && (
+          <button type="button" className={railButton(false)} onClick={props.onOpenBots}>
+            <Bot className="size-4" aria-hidden />
+            Bots
+          </button>
+        )}
         <button
           type="button"
           aria-current={props.active === "settings" ? "page" : undefined}

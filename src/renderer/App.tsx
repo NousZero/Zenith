@@ -50,6 +50,7 @@ import {
   type LibraryDraft,
 } from "./LibraryDialog";
 import { EmptyState } from "./EmptyState";
+import { useExtras } from "./extras";
 import { FilesView } from "./FilesView";
 import { GoalsView } from "./GoalsView";
 import { formatTokens } from "./lib/format";
@@ -59,6 +60,7 @@ import { cn } from "./lib/utils";
 import {
   AppearanceSection,
   ConnectionsSection,
+  ExtrasSection,
   McpSection,
   PermissionsSection,
   PersonaFileEditor,
@@ -113,7 +115,7 @@ const SETTINGS_TABS = [
   { id: "skills", label: "Skills" },
   { id: "commands", label: "Commands" },
   { id: "plugins", label: "Guardrails" },
-  { id: "automation", label: "Automation" },
+  { id: "extras", label: "Extras" },
 ] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
 const UNTITLED_SESSION = "Untitled session";
@@ -153,6 +155,7 @@ export function App() {
     "USER.md": "",
   });
   const [history, setHistory] = useState<{ tab: HistoryTab; query: string } | null>(null);
+  const { extras, setExtra } = useExtras();
   const {
     session,
     setSession,
@@ -700,18 +703,27 @@ export function App() {
         if (match) setPersonality(match.id);
       },
     },
-    {
-      name: "bots",
-      title: "Bots for Telegram, Discord, Slack, WhatsApp, Signal, and Home Assistant",
-      icon: Bot,
-      run: () => setBotsOpen(true),
-    },
-    {
-      name: "schedule",
-      title: "Scheduled tasks",
-      icon: CalendarClock,
-      run: () => setScheduleOpen(true),
-    },
+    // Commands that open an extra are listed only while that extra is on.
+    ...(extras.bots
+      ? [
+          {
+            name: "bots",
+            title: "Bots for Telegram, Discord, Slack, WhatsApp, Signal, and Home Assistant",
+            icon: Bot,
+            run: () => setBotsOpen(true),
+          },
+        ]
+      : []),
+    ...(extras.schedule
+      ? [
+          {
+            name: "schedule",
+            title: "Scheduled tasks",
+            icon: CalendarClock,
+            run: () => setScheduleOpen(true),
+          },
+        ]
+      : []),
     {
       name: "settings",
       title: "Settings: providers, themes, soul, library, guardrails",
@@ -781,7 +793,7 @@ export function App() {
     skills: "Instructions you run with /name in the composer.",
     commands: "Prompt templates you run with /name; $ARGUMENTS is replaced with what you type.",
     plugins: "How much agents may do on their own, and the tools they can reach.",
-    automation: "Bots, scheduled tasks, and usage insights.",
+    extras: "Features outside the core loop: goals, bots, scheduling, dictation, and more.",
   };
 
   const sessionTitle = (
@@ -826,6 +838,7 @@ export function App() {
           <Pane
             pane={pane}
             controlsSlot={composerControls}
+            showProjectBoard={extras.projectBoard}
             singlePane
             credentialsVersion={credentialsVersion}
             connections={connections}
@@ -926,6 +939,7 @@ export function App() {
         onCancelQueue={cancelQueue}
         status={runStatus}
         permissionsVersion={guardVersion}
+        extras={extras}
       />
     </>
   );
@@ -1066,44 +1080,15 @@ export function App() {
                 <AuditSection />
               </>,
             )}
-          {settingsTab === "automation" &&
+          {settingsTab === "extras" &&
             narrow(
-              <ul className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
-                {[
-                  {
-                    icon: Bot,
-                    title: "Bots",
-                    text: "Chat with Zenith from Telegram, Discord, Slack, WhatsApp, Signal, or Home Assistant. Only people you pair are answered, and bots never run tools.",
-                    open: () => setBotsOpen(true),
-                  },
-                  {
-                    icon: CalendarClock,
-                    title: "Scheduled tasks",
-                    text: "Run a prompt on a schedule while Zenith is open, and get the result here or through a bot.",
-                    open: () => setScheduleOpen(true),
-                  },
-                  {
-                    icon: BarChart3,
-                    title: "Usage insights",
-                    text: "Tokens and messages by connection and model across all your sessions.",
-                    open: () => setHistory({ tab: "insights", query: "" }),
-                  },
-                ].map((card) => (
-                  <li key={card.title}>
-                    <button
-                      type="button"
-                      onClick={card.open}
-                      className="flex h-full w-full cursor-pointer flex-col gap-2 border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
-                    >
-                      <card.icon className="size-5 text-primary" aria-hidden />
-                      <span className="text-sm font-medium">{card.title}</span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">
-                        {card.text}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>,
+              <ExtrasSection
+                extras={extras}
+                onToggle={setExtra}
+                onOpenBots={() => setBotsOpen(true)}
+                onOpenSchedule={() => setScheduleOpen(true)}
+                onOpenInsights={() => setHistory({ tab: "insights", query: "" })}
+              />,
             )}
         </div>
       )}
@@ -1165,6 +1150,7 @@ export function App() {
           onOpenHistory={() => setHistory({ tab: "search", query: "" })}
           onOpenSchedule={() => setScheduleOpen(true)}
           onOpenBots={() => setBotsOpen(true)}
+          extras={extras}
         />
 
         <main className="workbench-grid flex min-h-0 min-w-0 flex-col">

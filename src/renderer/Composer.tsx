@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { MAX_IMAGES_PER_MESSAGE, takesImages } from "../shared/images";
 import { insertMention, mentionQuery, rankFiles } from "../shared/mentions";
+import type { ExtraId } from "./extras";
 import { postureOf, type Posture } from "../shared/permissions";
 import type { ImageAttachment, PaneState } from "../shared/types";
 import { completeCommandName, parseSlashCommand, type Command } from "./commands";
@@ -80,10 +81,12 @@ export function Composer(props: {
   status?: string | null;
   // Bumped when the permission rules change, so the facts re-read them.
   permissionsVersion?: number;
+  // Which extras are on (Settings › Extras); dictation and screenshots are hidden when off.
+  extras?: Record<ExtraId, boolean>;
   // Receives the element the pane renders its provider, model, and folder controls into.
   onControlsSlot?: (element: HTMLElement | null) => void;
 }) {
-  const { prompt, onPromptChange: setPrompt, onControlsSlot } = props;
+  const { prompt, onPromptChange: setPrompt, onControlsSlot, extras } = props;
   const dictation = useDictation((text) =>
     setPrompt(prompt.trim() ? `${prompt.trimEnd()} ${text}` : text),
   );
@@ -548,10 +551,12 @@ export function Composer(props: {
                   or paste, drop
                 </span>
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void attachScreenshot()}>
-                <Monitor />
-                Screenshot of the screen
-              </DropdownMenuItem>
+              {extras?.screenshot && (
+                <DropdownMenuItem onSelect={() => void attachScreenshot()}>
+                  <Monitor />
+                  Screenshot of the screen
+                </DropdownMenuItem>
+              )}
               {projectPath && (
                 <DropdownMenuItem
                   onSelect={() => {
@@ -575,17 +580,20 @@ export function Composer(props: {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button
-            size="icon-sm"
-            variant={dictation.recording ? "secondary" : "ghost"}
-            disabled={dictation.busy}
-            aria-label={dictation.recording ? "Stop dictating" : "Dictate a message"}
-            aria-pressed={dictation.recording}
-            title={dictation.problem ?? (dictation.recording ? "Stop dictating" : "Dictate")}
-            onClick={() => void dictation.toggle()}
-          >
-            {dictation.recording ? <Square className="fill-current" /> : <Mic />}
-          </Button>
+          {/* A recording in progress keeps its stop button even if dictation was just turned off. */}
+          {(extras?.dictation || dictation.recording) && (
+            <Button
+              size="icon-sm"
+              variant={dictation.recording ? "secondary" : "ghost"}
+              disabled={dictation.busy}
+              aria-label={dictation.recording ? "Stop dictating" : "Dictate a message"}
+              aria-pressed={dictation.recording}
+              title={dictation.problem ?? (dictation.recording ? "Stop dictating" : "Dictate")}
+              onClick={() => void dictation.toggle()}
+            >
+              {dictation.recording ? <Square className="fill-current" /> : <Mic />}
+            </Button>
+          )}
           <kbd className="hidden shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
             {isMac ? "⌘" : "Ctrl"} ↵
           </kbd>

@@ -1,5 +1,8 @@
 import {
   AlertCircle,
+  BarChart3,
+  Bot,
+  CalendarClock,
   CheckCircle2,
   CircleDashed,
   Lock,
@@ -20,6 +23,7 @@ import type { AuditEntry, ConnectionStatus, PersonaFile, SandboxStatus } from ".
 import { Button } from "./components/ui/button";
 import { Switch } from "./components/ui/switch";
 import { Textarea } from "./components/ui/textarea";
+import { EXTRAS, type ExtraId } from "./extras";
 import { cn } from "./lib/utils";
 import { providerMeta } from "./providers";
 import { applyTheme, storedTheme, THEMES, type ThemeId } from "./themes";
@@ -805,5 +809,74 @@ export function PermissionsSection(props: { onChanged?: () => void }) {
         </div>
       </details>
     </Section>
+  );
+}
+
+export function ExtrasSection(props: {
+  extras: Record<ExtraId, boolean>;
+  onToggle(id: ExtraId, enabled: boolean): void;
+  onOpenBots(): void;
+  onOpenSchedule(): void;
+  onOpenInsights(): void;
+}) {
+  return (
+    <>
+      <Section title="Extras">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Features outside the core loop of picking a folder, asking, watching, reviewing, and
+          keeping or undoing changes. Off by default; anything already in use when this list was
+          added stays on.
+        </p>
+        <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
+          {EXTRAS.map((extra) => (
+            <li key={extra.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[13px] font-medium text-foreground">{extra.label}</span>
+                <span className="text-xs text-muted-foreground">{extra.description}</span>
+              </span>
+              <Switch
+                aria-label={extra.label}
+                checked={props.extras[extra.id]}
+                onCheckedChange={(checked) => props.onToggle(extra.id, checked)}
+              />
+            </li>
+          ))}
+        </ul>
+      </Section>
+      <ul className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
+        {[
+          {
+            icon: Bot,
+            title: "Bots",
+            text: "Chat with Zenith from Telegram, Discord, Slack, WhatsApp, Signal, or Home Assistant. Only people you pair are answered, and bots never run tools.",
+            open: props.onOpenBots,
+          },
+          {
+            icon: CalendarClock,
+            title: "Scheduled tasks",
+            text: "Run a prompt on a schedule while Zenith is open, and get the result here or through a bot.",
+            open: props.onOpenSchedule,
+          },
+          {
+            icon: BarChart3,
+            title: "Usage insights",
+            text: "Tokens and messages by connection and model across all your sessions.",
+            open: props.onOpenInsights,
+          },
+        ].map((card) => (
+          <li key={card.title}>
+            <button
+              type="button"
+              onClick={card.open}
+              className="flex h-full w-full cursor-pointer flex-col gap-2 border border-border bg-card p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+            >
+              <card.icon className="size-5 text-primary" aria-hidden />
+              <span className="text-sm font-medium">{card.title}</span>
+              <span className="text-xs leading-relaxed text-muted-foreground">{card.text}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

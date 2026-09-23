@@ -310,6 +310,8 @@ export function Pane(props: {
   // Where the provider, model, folder, and pane menu go instead of a header above the chat: the
   // composer's controls row, as in Cursor. Without it the pane keeps its own header.
   controlsSlot?: HTMLElement | null;
+  // Settings › Extras › Project board; the folder menu offers the board only when it's on.
+  showProjectBoard?: boolean;
   credentialsVersion: number;
   connections: ConnectionStatus[];
   streaming: boolean;
@@ -659,10 +661,12 @@ export function Pane(props: {
                     <FolderTree />
                     Open workspace
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => props.onOpenBoard(pane.projectPath ?? "")}>
-                    <KanbanSquare />
-                    Open project board
-                  </DropdownMenuItem>
+                  {props.showProjectBoard && (
+                    <DropdownMenuItem onSelect={() => props.onOpenBoard(pane.projectPath ?? "")}>
+                      <KanbanSquare />
+                      Open project board
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onSelect={() => void chooseProject()}>
                     <FolderOpen />
                     Change folder…
