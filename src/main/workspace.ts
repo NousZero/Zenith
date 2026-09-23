@@ -75,7 +75,8 @@ export async function listAllFiles(projectPath: string, limit: number): Promise<
   const files: string[] = [];
 
   async function walk(directory: string, relativePath: string): Promise<void> {
-    const entries = await readdir(directory, { withFileTypes: true });
+    // A folder that can't be read is skipped, not allowed to empty the whole list.
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
       if (files.length >= limit) return;
       if (entry.isSymbolicLink() || SKIPPED_DIRECTORIES.has(entry.name)) continue;

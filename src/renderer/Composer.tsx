@@ -438,6 +438,8 @@ export function Composer(props: {
             setActiveIndex(0);
             resize();
           }}
+          // Arrow keys and clicks move the caret without changing the text; the picker follows it.
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onKeyDown={(event) => {
             if (fileMenu.length > 0) {
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {

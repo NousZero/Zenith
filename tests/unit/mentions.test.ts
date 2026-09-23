@@ -31,8 +31,8 @@ describe("composer mentions", () => {
     });
     // Caret mid-prompt: only the query before it is replaced, the rest of the text stays put.
     expect(insertMention("look at @ip please", 11, "src/main/ipc.ts")).toEqual({
-      prompt: "look at @src/main/ipc.ts  please",
-      caret: 25,
+      prompt: "look at @src/main/ipc.ts please",
+      caret: 24,
     });
   });
 });

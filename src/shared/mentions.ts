@@ -37,6 +37,10 @@ export function insertMention(
   caret: number,
   path: string,
 ): { prompt: string; caret: number } {
-  const before = prompt.slice(0, caret).replace(/@([^\s@]*)$/, `@${path} `);
-  return { prompt: before + prompt.slice(caret), caret: before.length };
+  const after = prompt.slice(caret);
+  // No second space when the text after the caret already starts with one.
+  const before = prompt
+    .slice(0, caret)
+    .replace(/@([^\s@]*)$/, `@${path}${/^\s/.test(after) ? "" : " "}`);
+  return { prompt: before + after, caret: before.length };
 }
