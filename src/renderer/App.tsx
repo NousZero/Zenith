@@ -1123,7 +1123,14 @@ export function App() {
           ) : activity === "files" ? (
             filesView
           ) : activity === "goals" ? (
-            <GoalsView />
+            <>
+              <PageHeader
+                eyebrow="Kept between sessions"
+                title="Goals"
+                description="What you are working towards. Agents read these with your profile."
+              />
+              <GoalsView />
+            </>
           ) : (
             settingsView
           )}

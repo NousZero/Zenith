@@ -29,6 +29,7 @@ beforeEach(() => {
     value: {
       sandbox: { status: vi.fn().mockResolvedValue({ available: null, enabled: false }) },
       permissions: { get: vi.fn().mockResolvedValue(POSTURES[1]?.rules ?? "") },
+      voice: { status: vi.fn().mockResolvedValue({ available: false, detail: "Not installed" }) },
     },
   });
 });

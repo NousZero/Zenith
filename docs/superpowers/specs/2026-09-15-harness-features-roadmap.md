@@ -395,3 +395,15 @@ runs several connections, so the reviewer can simply be a different one.
   stand-in `claude` and `copilot` binaries on `PATH` (no quota spent), a turn showed
   `✗ Secrets · ✓ Errors · ✓ Scope`, then "Review with Copilot CLI" returned `VERDICT: findings`
   with `WHERE: leak.ts:1` and the chip turned `✗ Review`.
+
+## Goals page matches the rest of the app (2026-09-21)
+
+Small consistency pass, no behavior change: the Goals page drew its own small title instead of the
+`PageHeader` every other page uses, and its content stretched the full window. It now carries the
+standard header ("Kept between sessions" / Goals / what it is for) and sits in the same measured
+column as Settings and the library pages. The progress slider was drawing in the system blue, the
+only blue in the window; it now follows the theme's primary colour (`accent-primary`).
+
+Also fixed: the component test's `window.zenith` stub had no `voice.status`, so the dictation hook
+added in the same period made `tests/component/transcript.test.tsx` fail. Stub added; the suite is
+green again (150 unit, 101 integration, 2 component).

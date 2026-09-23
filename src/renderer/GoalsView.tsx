@@ -1,4 +1,4 @@
-import { Plus, Target, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { Goal, GoalStatus } from "../shared/types";
@@ -90,12 +90,7 @@ export function GoalsView() {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
-      <div className="flex items-center gap-2">
-        <Target className="size-4 text-muted-foreground" aria-hidden />
-        <h1 className="text-sm font-medium">Goals</h1>
-      </div>
-
+    <div className="mx-auto flex w-full max-w-4xl min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
       <form
         className="flex gap-2"
         onSubmit={(event) => {
@@ -164,6 +159,7 @@ export function GoalsView() {
             <ProgressBar value={goal.progress} muted={goal.status !== "active"} />
             <input
               type="range"
+              className="accent-primary"
               min={0}
               max={100}
               step={5}
