@@ -133,6 +133,11 @@ export function toPermissionPrompt(params: Params): PermissionPrompt {
 // Runs an ACP agent as one long-lived process and keeps one agent session per pane.
 // A session is reused while the pane's history matches what the agent already saw;
 // after retry, undo, branch, or a memory change Zenith starts a new session with the transcript.
+// Errors from session/new that mean the agent wants a sign-in, not that something else broke.
+const SIGN_IN_PROBLEM = /api.?key|auth|sign.?in|log.?in|credential|unauthori[sz]ed/i;
+// The sign-in methods each connection's agent offered at initialize, API-key ones left out.
+const signInMethods = new WeakMap<object, string[]>();
+
 export function createAcpAdapter(
   spec: AcpAgentSpec,
   deps: AcpAdapterDeps,
@@ -193,12 +198,18 @@ export function createAcpAdapter(
         }),
     );
     try {
-      await conn.request("initialize", {
+      const init = await conn.request<{ authMethods?: { id?: unknown }[] }>("initialize", {
         protocolVersion: PROTOCOL_VERSION,
         // Zenith lends no file system or terminal; the agent works with its own tools.
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
         clientInfo: { name: "zenith", version: deps.clientVersion },
       });
+      signInMethods.set(
+        conn,
+        (init.authMethods ?? [])
+          .map((method) => method.id)
+          .filter((id): id is string => typeof id === "string" && !/api.?key/i.test(id)),
+      );
     } catch (error) {
       conn.close();
       throw error;
@@ -219,10 +230,14 @@ export function createAcpAdapter(
   }
 
   async function newSession(conn: AcpConnection, cwd = deps.cwd): Promise<string> {
-    const result = await conn.request<NewSessionResult>("session/new", {
-      cwd,
-      mcpServers: await deps.mcpServers(),
-    });
+    const open = async () =>
+      conn.request<NewSessionResult>("session/new", { cwd, mcpServers: await deps.mcpServers() });
+    let result: NewSessionResult;
+    try {
+      result = await open();
+    } catch (error) {
+      result = await afterSignIn(conn, error, open);
+    }
     const available = result.models?.availableModels ?? [];
     if (available.length > 0) {
       knownModels = available.map((model) => ({
@@ -231,6 +246,30 @@ export function createAcpAdapter(
       }));
     }
     return result.sessionId;
+  }
+
+  // Some agents (Gemini over ACP) only use the user's sign-in once the client asks for it, and
+  // otherwise refuse a session with a misleading "API key is missing". On a sign-in-looking
+  // refusal, each sign-in method the agent offered is tried; if none works, the error carries
+  // the agent's own explanation, which is the one that says what to do.
+  async function afterSignIn(
+    conn: AcpConnection,
+    error: unknown,
+    open: () => Promise<NewSessionResult>,
+  ): Promise<NewSessionResult> {
+    const message = error instanceof Error ? error.message : String(error);
+    const methods = signInMethods.get(conn) ?? [];
+    if (!SIGN_IN_PROBLEM.test(message) || methods.length === 0) throw error;
+    const reasons: string[] = [];
+    for (const methodId of methods) {
+      try {
+        await conn.request("authenticate", { methodId });
+        return await open();
+      } catch (attempt) {
+        reasons.push(attempt instanceof Error ? attempt.message : String(attempt));
+      }
+    }
+    throw new Error(`${message} ${reasons.join(" ")}`.trim(), { cause: error });
   }
 
   // The spare session was opened in the sandbox, so only sandbox conversations can use it.

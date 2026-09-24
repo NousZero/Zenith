@@ -7,12 +7,12 @@ import type { ChatChunk, ChatMessage, SendMessageRequest } from "../../src/share
 
 const agentScript = join(import.meta.dirname, "..", "fixtures", "fake-acp-agent.mjs");
 
-function makeAdapter() {
+function makeAdapter(env: Record<string, string> = {}) {
   return createAcpAdapter(
     { id: "fake-agent", label: "Fake agent", args: [agentScript] },
     {
       resolveBinary: async () => process.execPath,
-      childEnv: () => ({ PATH: process.env["PATH"] ?? "" }),
+      childEnv: () => ({ PATH: process.env["PATH"] ?? "", ...env }),
       cwd: tmpdir(),
       clientVersion: "test",
       mcpServers: async () => [],
@@ -34,6 +34,23 @@ async function reply(
   }
   return { text: chunks.map((chunk) => chunk.delta).join(""), chunks };
 }
+
+describe("signing in to an ACP agent that asks for it", () => {
+  it("authenticates with the agent's sign-in method, then opens the session", async () => {
+    const adapter = makeAdapter({ FAKE_ACP_SIGN_IN: "works" });
+    const { text } = await reply(adapter, { messages: [{ role: "user", content: "hello" }] });
+    expect(text).toContain("hello");
+  });
+
+  it("reports the agent's own sign-in explanation when no method works", async () => {
+    const adapter = makeAdapter({ FAKE_ACP_SIGN_IN: "unsupported" });
+    await expect(
+      reply(adapter, { messages: [{ role: "user", content: "hello" }] }),
+    ).rejects.toThrow(
+      "Gemini API key is missing or not configured. This client is no longer supported for your account.",
+    );
+  });
+});
 
 describe("createAcpAdapter with a real child process", () => {
   let adapter: ReturnType<typeof makeAdapter> | undefined;

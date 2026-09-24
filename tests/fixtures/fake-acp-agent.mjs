@@ -8,6 +8,8 @@ const models = new Map();
 const hanging = new Map();
 const waiting = new Map();
 let sessions = 0;
+const signIn = process.env.FAKE_ACP_SIGN_IN;
+let signedIn = false;
 let outgoing = 1000;
 
 function chunk(sessionId, text) {
@@ -27,8 +29,28 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     return;
   }
   const { id, method, params } = message;
-  if (method === "initialize")
-    return send({ id, result: { protocolVersion: 1, agentCapabilities: {} } });
+  if (method === "initialize") {
+    // FAKE_ACP_SIGN_IN=works|unsupported acts like Gemini over ACP: sessions are refused with a
+    // misleading "API key" error until the client authenticates with a sign-in method.
+    const authMethods = signIn ? [{ id: "oauth-personal" }, { id: "gemini-api-key" }] : undefined;
+    return send({ id, result: { protocolVersion: 1, agentCapabilities: {}, authMethods } });
+  }
+  if (method === "authenticate") {
+    if (signIn === "works" && params.methodId === "oauth-personal") {
+      signedIn = true;
+      return send({ id, result: {} });
+    }
+    return send({
+      id,
+      error: { code: -32000, message: "This client is no longer supported for your account." },
+    });
+  }
+  if (method === "session/new" && signIn && !signedIn) {
+    return send({
+      id,
+      error: { code: -32000, message: "Gemini API key is missing or not configured." },
+    });
+  }
   if (method === "session/new") {
     const sessionId = `s${++sessions}`;
     models.set(sessionId, "default");
