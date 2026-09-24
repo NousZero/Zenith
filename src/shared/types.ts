@@ -252,6 +252,24 @@ export interface GitWorktree {
   branch: string;
 }
 
+// One prompt sent to several assistants, each in its own worktree cut from the same commit.
+export interface Comparison {
+  // Eight hex characters, part of every run's branch name.
+  id: string;
+  projectPath: string;
+  // The commit every worktree starts from, and the one the project must still be at on keep.
+  base: string;
+  runs: { providerId: string; branch: string; path: string }[];
+}
+
+// A file one run changed, against the comparison's base commit; counts are null for binary files.
+export interface ComparisonFile {
+  path: string;
+  added: number | null;
+  removed: number | null;
+  diff: string;
+}
+
 export interface WorkspaceEntry {
   name: string;
   // Relative to the project folder, with "/" separators.
@@ -481,6 +499,23 @@ export interface ZenithApi {
     onCommandOutput(
       listener: (event: { id: string; text?: string; exitCode?: number | null }) => void,
     ): () => void;
+  };
+  // Side-by-side comparison. Worktrees and branches are named by the main process; the window
+  // refers to a run by its comparison id and provider id only.
+  compare: {
+    // Refuses a folder outside Git or with uncommitted changes.
+    start(projectPath: string, providerIds: string[], prompt: string): Promise<Comparison>;
+    changes(projectPath: string, id: string, providerId: string): Promise<ComparisonFile[]>;
+    // Applies one run's changes to the project, then removes every worktree of the comparison.
+    // Resolves to the number of files applied and whatever could not be removed.
+    keep(
+      projectPath: string,
+      id: string,
+      providerId: string,
+    ): Promise<{ applied: number; leftovers: string[] }>;
+    discard(projectPath: string, id: string): Promise<string[]>;
+    // Worktrees of earlier comparisons that were never kept or discarded, e.g. after a quit.
+    leftovers(projectPath: string): Promise<{ id: string; paths: string[] }[]>;
   };
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
   screen: {

@@ -12,6 +12,8 @@ import type {
   Goal,
   GoalInput,
   GitStatus,
+  Comparison,
+  ComparisonFile,
   GitWorktree,
   WorkspaceEntry,
   VoiceStatus,
@@ -178,6 +180,22 @@ const zenithApi: ZenithApi = {
       ipcRenderer.on("workspace:output", handler);
       return () => ipcRenderer.removeListener("workspace:output", handler);
     },
+  },
+  compare: {
+    start: (projectPath: string, providerIds: string[], prompt: string): Promise<Comparison> =>
+      ipcRenderer.invoke("compare:start", { projectPath, providerIds, prompt }),
+    changes: (projectPath: string, id: string, providerId: string): Promise<ComparisonFile[]> =>
+      ipcRenderer.invoke("compare:changes", { projectPath, id, providerId }),
+    keep: (
+      projectPath: string,
+      id: string,
+      providerId: string,
+    ): Promise<{ applied: number; leftovers: string[] }> =>
+      ipcRenderer.invoke("compare:keep", { projectPath, id, providerId }),
+    discard: (projectPath: string, id: string): Promise<string[]> =>
+      ipcRenderer.invoke("compare:discard", { projectPath, id }),
+    leftovers: (projectPath: string): Promise<{ id: string; paths: string[] }[]> =>
+      ipcRenderer.invoke("compare:leftovers", projectPath),
   },
   screen: {
     capture: (): Promise<ImageAttachment> => ipcRenderer.invoke("screen:capture"),

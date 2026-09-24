@@ -22,6 +22,7 @@ import { createAcpAdapter } from "./acp/acp-adapter";
 import { isInside, runClaudeAgent } from "./agent/claude-agent";
 import { formatFile } from "./agent/format";
 import { createLanguageServers, servedByLanguageServer } from "./agent/lsp";
+import { createComparisons } from "./compare";
 import { runGates } from "./gates";
 import { collectDiff, REVIEW_SYSTEM, reviewPrompt, reviewVerdict } from "./review";
 import { createMcpTools } from "./agent/mcp-client";
@@ -173,6 +174,7 @@ export function registerIpcHandlers(options: {
     () => childProcessEnv(),
   );
   const gitWorkspace = createGitWorkspace(git);
+  const comparisons = createComparisons(git);
   const snapshots = createSnapshotStore({
     db,
     git,
@@ -766,6 +768,64 @@ export function registerIpcHandlers(options: {
     "workspace:addWorktree",
     async (_event, payload: { projectPath: unknown; branch: unknown }) =>
       gitWorkspace.addWorktree(await projectArg(payload.projectPath), String(payload.branch ?? "")),
+  );
+  const comparisonId = (value: unknown) => (typeof value === "string" ? value : "");
+  handle(
+    "compare:start",
+    async (_event, payload: { projectPath: unknown; providerIds: unknown; prompt: unknown }) => {
+      const projectPath = await projectArg(payload.projectPath);
+      const providerIds = Array.isArray(payload.providerIds)
+        ? payload.providerIds.filter((id): id is string => typeof id === "string")
+        : [];
+      const comparison = await comparisons.start(projectPath, providerIds);
+      auditRecord({
+        kind: "command",
+        projectPath,
+        summary: `Started comparing ${providerIds.join(", ")}: ${String(payload.prompt ?? "")}`,
+        outcome: `${comparison.runs.length} worktrees from ${comparison.base.slice(0, 7)}`,
+      });
+      return comparison;
+    },
+  );
+  handle(
+    "compare:changes",
+    async (_event, payload: { projectPath: unknown; id: unknown; providerId: unknown }) =>
+      comparisons.changes(
+        await projectArg(payload.projectPath),
+        comparisonId(payload.id),
+        String(payload.providerId ?? ""),
+      ),
+  );
+  handle(
+    "compare:keep",
+    async (_event, payload: { projectPath: unknown; id: unknown; providerId: unknown }) => {
+      const projectPath = await projectArg(payload.projectPath);
+      const providerId = String(payload.providerId ?? "");
+      const result = await comparisons.keep(projectPath, comparisonId(payload.id), providerId);
+      auditRecord({
+        kind: "edit",
+        projectPath,
+        summary: `Kept ${providerId}'s changes from a comparison`,
+        outcome: `${result.applied} ${result.applied === 1 ? "file" : "files"} applied${
+          result.leftovers.length ? `; not removed: ${result.leftovers.join(", ")}` : ""
+        }`,
+      });
+      return result;
+    },
+  );
+  handle("compare:discard", async (_event, payload: { projectPath: unknown; id: unknown }) => {
+    const projectPath = await projectArg(payload.projectPath);
+    const leftovers = await comparisons.discard(projectPath, comparisonId(payload.id));
+    auditRecord({
+      kind: "rollback",
+      projectPath,
+      summary: "Discarded a comparison",
+      outcome: leftovers.length ? `not removed: ${leftovers.join(", ")}` : "worktrees removed",
+    });
+    return leftovers;
+  });
+  handle("compare:leftovers", async (_event, projectPath: unknown) =>
+    comparisons.leftovers(await projectArg(projectPath)),
   );
   handle("workspace:run", async (_event, payload: { projectPath: unknown; command: unknown }) =>
     terminal.run(await projectArg(payload.projectPath), String(payload.command ?? "")),

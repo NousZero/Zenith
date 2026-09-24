@@ -167,8 +167,9 @@ export function createGitWorkspace(git: GitRunner) {
         .filter((worktree) => worktree.path !== "");
     },
 
-    // Creates a sibling folder "<project>-<branch>" on a new branch.
-    async addWorktree(projectPath: string, branch: string): Promise<string> {
+    // Creates a sibling folder "<project>-<branch>" on a new branch, from HEAD unless a start
+    // commit is given.
+    async addWorktree(projectPath: string, branch: string, startPoint?: string): Promise<string> {
       await git(["check-ref-format", "--branch", branch], { cwd: projectPath }).catch(() => {
         throw new Error(`"${branch}" is not a valid branch name.`);
       });
@@ -176,7 +177,9 @@ export function createGitWorkspace(git: GitRunner) {
         dirname(projectPath),
         `${basename(projectPath)}-${branch.replaceAll("/", "-")}`,
       );
-      await git(["worktree", "add", "-b", branch, target], { cwd: projectPath });
+      await git(["worktree", "add", "-b", branch, target, ...(startPoint ? [startPoint] : [])], {
+        cwd: projectPath,
+      });
       return target;
     },
   };
