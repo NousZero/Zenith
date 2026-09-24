@@ -5,7 +5,8 @@ import { createOpenAiAdapter } from "../../../src/main/providers/openai";
 function sseResponse(events: string[]): Response {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      for (const event of events) controller.enqueue(new TextEncoder().encode(`data: ${event}\n\n`));
+      for (const event of events)
+        controller.enqueue(new TextEncoder().encode(`data: ${event}\n\n`));
       controller.close();
     },
   });
@@ -18,13 +19,15 @@ describe("createOpenAiAdapter", () => {
   });
 
   it("streams concatenated text deltas and a final done chunk", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      sseResponse([
-        JSON.stringify({ choices: [{ delta: { content: "Hel" } }] }),
-        JSON.stringify({ choices: [{ delta: { content: "lo" } }] }),
-        "[DONE]",
-      ]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        sseResponse([
+          JSON.stringify({ choices: [{ delta: { content: "Hel" } }] }),
+          JSON.stringify({ choices: [{ delta: { content: "lo" } }] }),
+          "[DONE]",
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const adapter = createOpenAiAdapter(async () => "sk-test");
@@ -51,14 +54,10 @@ describe("createOpenAiAdapter", () => {
   });
 
   it("throws with the response body when the request fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response("bad key", { status: 401 })),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bad key", { status: 401 })));
     const adapter = createOpenAiAdapter(async () => "sk-bad");
-    const iterator = adapter.sendMessage({ model: "gpt-4o-mini", messages: [] })[
-      Symbol.asyncIterator
-    ]();
+    const stream = adapter.sendMessage({ model: "gpt-4o-mini", messages: [] });
+    const iterator = stream[Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toThrow("OpenAI request failed: 401");
   });
 

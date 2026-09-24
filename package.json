@@ -14,7 +14,7 @@
     "preflight:deps": "node scripts/check-dependency-specs.mjs",
     "preflight:ci": "node scripts/validate-ci.mjs",
     "dev": "electron-forge start",
-    "format:check": "prettier --check --no-error-on-unmatched-pattern package.json scripts/**/*.mjs *.{mjs,ts} src/**/*.{ts,tsx,css,html} tests/**/*.{ts,tsx}",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern package.json \"scripts/**/*.mjs\" \"*.{mjs,ts}\" \"src/**/*.{ts,tsx,css,html}\" \"tests/**/*.{ts,tsx}\"",
     "lint": "eslint . --max-warnings 0 --flag unstable_native_nodejs_ts_config",
     "typecheck": "tsc --noEmit --project tsconfig.json --pretty false && tsc --build tsconfig.processes.json --pretty false",
     "test:unit": "vitest run --project unit",
@@ -23,6 +23,7 @@
     "test": "npm run test:unit && npm run test:integration && npm run test:component",
     "test:e2e": "playwright test --config playwright.config.ts",
     "test:e2e:build": "npm run package && npm run test:e2e",
+    "smoke:real": "npm run package && playwright test --config playwright.smoke.config.ts",
     "verify": "npm run preflight:deps && npm run preflight:ci && npm run format:check && npm run lint && npm run typecheck && npm run test",
     "package": "node scripts/forge-build.mjs package",
     "make": "node scripts/forge-build.mjs make"

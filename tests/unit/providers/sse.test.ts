@@ -14,24 +14,21 @@ function responseFromChunks(chunks: string[]): Response {
 
 describe("readSseLines", () => {
   it("yields the payload after data: for each event line", async () => {
-    const response = responseFromChunks([
-      "data: {\"a\":1}\n",
-      "event: message\ndata: {\"a\":2}\n\n",
-    ]);
+    const response = responseFromChunks(['data: {"a":1}\n', 'event: message\ndata: {"a":2}\n\n']);
     const lines: string[] = [];
     for await (const line of readSseLines(response)) lines.push(line);
     expect(lines).toEqual(['{"a":1}', '{"a":2}']);
   });
 
   it("splits a data: line arriving across two chunks", async () => {
-    const response = responseFromChunks(["data: {\"a\"", ":3}\n"]);
+    const response = responseFromChunks(['data: {"a"', ":3}\n"]);
     const lines: string[] = [];
     for await (const line of readSseLines(response)) lines.push(line);
     expect(lines).toEqual(['{"a":3}']);
   });
 
   it("stops early when the signal is already aborted", async () => {
-    const response = responseFromChunks(["data: {\"a\":1}\n"]);
+    const response = responseFromChunks(['data: {"a":1}\n']);
     const controller = new AbortController();
     controller.abort();
     const lines: string[] = [];
