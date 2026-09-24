@@ -93,7 +93,8 @@ describe("workspace terminal", () => {
     );
     await expect(terminals.start(join(project, "..", "elsewhere"), 80, 24)).rejects.toThrow();
 
-    const without = createPtyTerminals({ data: () => {}, exit: () => {} }, () => ({}), undefined);
+    // null, not undefined: an undefined module is the default, which loads the real node-pty.
+    const without = createPtyTerminals({ data: () => {}, exit: () => {} }, () => ({}), null);
     expect(without.available).toBe(false);
     await expect(without.start(project, 80, 24)).rejects.toThrow("isn't available");
   });

@@ -35,7 +35,7 @@ export interface PtyEvents {
   exit(id: string, code: number): void;
 }
 
-function loadPty(): PtyModule | undefined {
+function loadPty(): PtyModule | null {
   try {
     // The main process is bundled as CommonJS, where __filename is the bundle's own path.
     const from = typeof __filename === "string" ? __filename : import.meta.url;
@@ -43,21 +43,22 @@ function loadPty(): PtyModule | undefined {
   } catch (error) {
     console.error("A real terminal is unavailable (node-pty did not load):", error);
     logError("main", error);
-    return undefined;
+    return null;
   }
 }
 
 export function createPtyTerminals(
   events: PtyEvents,
   env: () => NodeJS.ProcessEnv,
-  module: PtyModule | undefined = loadPty(),
+  // null means node-pty is missing. Leaving the argument out (or passing undefined) loads it.
+  module: PtyModule | null = loadPty(),
 ) {
   const pty = module;
   const sessions = new Map<string, PtyProcess>();
   let counter = 0;
 
   return {
-    available: pty !== undefined,
+    available: pty !== null,
 
     async start(projectPath: string, columns: number, rows: number): Promise<string> {
       if (!pty) throw new Error("A real terminal isn't available in this build.");
