@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
+import { spawnResolved } from "../cli/launch";
 import { logError } from "../error-log";
 import type { McpServerConfig } from "../mcp-config";
 import type { ToolSpec } from "./tools";
@@ -26,10 +26,10 @@ async function connect(
   env: NodeJS.ProcessEnv,
   clientVersion: string,
 ): Promise<McpConnection> {
-  const child = spawn(config.command, config.args, {
+  // Commands are often bare names such as npx or uvx, which launch.ts finds on PATH on Windows.
+  const child = spawnResolved(config.command, config.args, {
     cwd,
     env: { ...env, ...config.env },
-    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
   child.stderr.resume();

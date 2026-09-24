@@ -15,23 +15,39 @@ import { delimiter, dirname, extname, join, resolve } from "node:path";
 // arguments at the mercy of its quoting rules, so instead the shim is read and its script run with
 // node directly: npm's cmd-shim always ends by running node on a script beside it, like
 //   "%_prog%"  "%dp0%\node_modules\@google\gemini-cli\dist\index.js" %*
+// Node's own npm.cmd and npx.cmd, installed beside node.exe, put the script in a variable first:
+//   SET "NPX_CLI_JS=%~dp0\node_modules\npm\bin\npx-cli.js"
+//   ...
+//   "%NODE_EXE%" "%NPX_CLI_JS%" %*
+// That exact form is recognised too, and runs npm's bundled script.
 // Anything else ending in .cmd or .bat is refused rather than handed to a shell.
 
 // The script an npm .cmd shim runs, relative to the shim's folder, or undefined when the text is
 // not an npm shim.
 export function npmShimScript(text: string): string | undefined {
   const match = /"%~?dp0%?\\?([^"%]+\.(?:c|m)?js)"\s+%\*/i.exec(text);
-  return match?.[1]?.replace(/\\/g, "/");
+  if (match?.[1]) return match[1].replace(/\\/g, "/");
+  // ponytail: a newer npm installed globally over Node's own, which npx.cmd would prefer after
+  // asking npm-prefix.js, is ignored and Node's bundled npm runs; ask npm-prefix.js if that matters.
+  const tool = /^"%NODE_EXE%"\s+"%(NP[MX])_CLI_JS%"\s+%\*\s*$/im.exec(text)?.[1]?.toLowerCase();
+  if (!tool) return undefined;
+  const assigned = new RegExp(
+    `^SET "${tool}_CLI_JS=%~dp0\\\\node_modules\\\\npm\\\\bin\\\\${tool}-cli\\.js"\\s*$`,
+    "im",
+  ).test(text);
+  return assigned ? `node_modules/npm/bin/${tool}-cli.js` : undefined;
 }
 
-function findOnPath(fileName: string, env: NodeJS.ProcessEnv): string | undefined {
+function findOnPath(fileNames: string[], env: NodeJS.ProcessEnv): string | undefined {
   for (const directory of (env["PATH"] ?? env["Path"] ?? "").split(delimiter).filter(Boolean)) {
-    const candidate = join(directory, fileName);
-    try {
-      accessSync(candidate);
-      return candidate;
-    } catch {
-      // Keep looking.
+    for (const fileName of fileNames) {
+      const candidate = join(directory, fileName);
+      try {
+        accessSync(candidate);
+        return candidate;
+      } catch {
+        // Keep looking.
+      }
     }
   }
   return undefined;
@@ -43,28 +59,33 @@ export function launchPlan(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): { command: string; args: string[] } {
-  const extension = extname(command).toLowerCase();
-  if (platform !== "win32" || (extension !== ".cmd" && extension !== ".bat")) {
-    return { command, args: [] };
-  }
+  if (platform !== "win32") return { command, args: [] };
+  // Node only tries .com and .exe after a bare name, so a user-configured `npx` or any tool npm
+  // installed as a .cmd would not be found; look for it on PATH as cmd.exe's PATHEXT would.
+  const program = /[\\/]/.test(command)
+    ? command
+    : (findOnPath(extname(command) ? [command] : [`${command}.exe`, `${command}.cmd`], env) ??
+      command);
+  const extension = extname(program).toLowerCase();
+  if (extension !== ".cmd" && extension !== ".bat") return { command: program, args: [] };
   let script: string | undefined;
   try {
-    script = npmShimScript(readFileSync(command, "utf8"));
+    script = npmShimScript(readFileSync(program, "utf8"));
   } catch {
     script = undefined;
   }
   if (!script) {
-    throw new Error(`${command} is a Windows batch file Zenith can't run without a shell.`);
+    throw new Error(`${program} is a Windows batch file Zenith can't run without a shell.`);
   }
-  const folder = dirname(command);
+  const folder = dirname(program);
   // The shim prefers a node.exe installed beside it, as npm does.
   let node: string | undefined = join(folder, "node.exe");
   try {
     accessSync(node);
   } catch {
-    node = findOnPath("node.exe", env);
+    node = findOnPath(["node.exe"], env);
   }
-  if (!node) throw new Error(`Node.js is needed to run ${command}, and it isn't on PATH.`);
+  if (!node) throw new Error(`Node.js is needed to run ${program}, and it isn't on PATH.`);
   return { command: node, args: [resolve(folder, script)] };
 }
 

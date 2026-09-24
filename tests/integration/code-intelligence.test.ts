@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { formatFile } from "../../src/main/agent/format";
 import { createLanguageServers } from "../../src/main/agent/lsp";
 import { createMcpTools } from "../../src/main/agent/mcp-client";
+import { launchable } from "../fixtures/windows-shim";
 
 const fixtures = join(import.meta.dirname, "..", "fixtures");
 const env = () => ({ PATH: process.env["PATH"] ?? "" });
@@ -94,7 +95,11 @@ describe("formatters, language servers, and MCP tools", () => {
     await chmod(join(fixtures, "fake-mcp-server.mjs"), 0o755);
     let servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> =
       {
-        demo: { command: join(fixtures, "fake-mcp-server.mjs"), args: [], env: { GREETING: "hi" } },
+        demo: {
+          command: launchable(join(fixtures, "fake-mcp-server.mjs")),
+          args: [],
+          env: { GREETING: "hi" },
+        },
         broken: { command: "zenith-no-such-mcp-server", args: [], env: {} },
       };
     const tools = createMcpTools({ servers: async () => servers, env, clientVersion: "test" });

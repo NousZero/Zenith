@@ -33,4 +33,20 @@ describe.skipIf(process.platform !== "win32")("npm .cmd shims on Windows", () =>
     await new Promise((resolve) => child.on("close", resolve));
     expect(JSON.parse(out)).toEqual(args);
   });
+
+  // MCP servers are usually configured as a bare `npx`, which is Node's own npx.cmd.
+  it("starts Node's own npx and npm by their bare names", { timeout: 60_000 }, async () => {
+    for (const tool of ["npx", "npm"]) {
+      const child = spawnResolved(tool, ["--version"], { env: process.env });
+      let out = "";
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => (out += chunk));
+      const code = await new Promise((resolve) => child.on("close", resolve));
+      expect({ tool, code, out: out.trim() }).toMatchObject({
+        tool,
+        code: 0,
+        out: expect.stringMatching(/^\d+\.\d+\.\d+$/),
+      });
+    }
+  });
 });

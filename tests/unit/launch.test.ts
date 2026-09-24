@@ -27,6 +27,34 @@ const NPM_SHIM = [
   'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@google\\gemini-cli\\dist\\index.js" %*',
 ].join("\r\n");
 
+// Node's own npx.cmd and npm.cmd, installed beside node.exe (npm 10 and 11 write the same text).
+const nodeShim = (tool: "npm" | "npx") => {
+  const name = tool.toUpperCase();
+  return [
+    ":: Created by npm, please don't edit manually.",
+    "@ECHO OFF",
+    "",
+    "SETLOCAL",
+    "",
+    'SET "NODE_EXE=%~dp0\\node.exe"',
+    'IF NOT EXIST "%NODE_EXE%" (',
+    '  SET "NODE_EXE=node"',
+    ")",
+    "",
+    'SET "NPM_PREFIX_JS=%~dp0\\node_modules\\npm\\bin\\npm-prefix.js"',
+    `SET "${name}_CLI_JS=%~dp0\\node_modules\\npm\\bin\\${tool}-cli.js"`,
+    `FOR /F "delims=" %%F IN ('CALL "%NODE_EXE%" "%NPM_PREFIX_JS%"') DO (`,
+    `  SET "NPM_PREFIX_${name}_CLI_JS=%%F\\node_modules\\npm\\bin\\${tool}-cli.js"`,
+    ")",
+    `IF EXIST "%NPM_PREFIX_${name}_CLI_JS%" (`,
+    `  SET "${name}_CLI_JS=%NPM_PREFIX_${name}_CLI_JS%"`,
+    ")",
+    "",
+    `"%NODE_EXE%" "%${name}_CLI_JS%" %*`,
+    "",
+  ].join("\r\n");
+};
+
 describe("launching npm .cmd shims without a shell", () => {
   let dir: string | undefined;
   afterEach(() => {
@@ -37,6 +65,38 @@ describe("launching npm .cmd shims without a shell", () => {
   it("finds the script an npm shim runs", () => {
     expect(npmShimScript(NPM_SHIM)).toBe("node_modules/@google/gemini-cli/dist/index.js");
     expect(npmShimScript("@echo off\r\ncall something-else.exe %*")).toBeUndefined();
+  });
+
+  it("finds the script Node's own npx.cmd and npm.cmd run, and nothing else in that form", () => {
+    expect(npmShimScript(nodeShim("npx"))).toBe("node_modules/npm/bin/npx-cli.js");
+    expect(npmShimScript(nodeShim("npm"))).toBe("node_modules/npm/bin/npm-cli.js");
+    // The variable must point at npm's own script beside the shim.
+    expect(
+      npmShimScript(nodeShim("npx").replace('npm\\bin\\npx-cli.js"\r', 'evil.js"\r')),
+    ).toBeUndefined();
+    expect(
+      npmShimScript(nodeShim("npx").replace('"%NODE_EXE%" "%NPX', '"%NODE_EXE%" -e x "%NPX')),
+    ).toBeUndefined();
+  });
+
+  it("finds a bare command on PATH as a .exe or .cmd, and runs npx through node", () => {
+    dir = mkdtempSync(join(tmpdir(), "zenith-shim-"));
+    writeFileSync(join(dir, "npx"), "#!/bin/sh"); // npm's sh script for Git Bash, never run.
+    writeFileSync(join(dir, "npx.cmd"), nodeShim("npx"));
+    writeFileSync(join(dir, "node.exe"), "");
+    writeFileSync(join(dir, "uvx.exe"), "");
+    const env = { PATH: dir };
+    expect(launchPlan("npx", env, "win32")).toEqual({
+      command: join(dir, "node.exe"),
+      args: [resolve(dir, "node_modules/npm/bin/npx-cli.js")],
+    });
+    expect(launchPlan("npx.cmd", env, "win32").args).toEqual([
+      resolve(dir, "node_modules/npm/bin/npx-cli.js"),
+    ]);
+    expect(launchPlan("uvx", env, "win32")).toEqual({ command: join(dir, "uvx.exe"), args: [] });
+    // Not found: left for spawn to report.
+    expect(launchPlan("zenith-none", env, "win32")).toEqual({ command: "zenith-none", args: [] });
+    expect(launchPlan("npx", env, "darwin")).toEqual({ command: "npx", args: [] });
   });
 
   it("runs other commands as they are, and on other systems leaves .cmd alone", () => {
