@@ -69,11 +69,13 @@ import {
 import { formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
 import { Markdown } from "./Markdown";
-import { DEFAULT_CLI_MODEL_ID, PROVIDERS, providerMeta, usesDefaultModel } from "./providers";
+import { DEFAULT_CLI_MODEL_ID, pickerGroups, providerMeta, usesDefaultModel } from "./providers";
 
 const STICK_TO_BOTTOM_PX = 48;
 // Radix Select needs a value that is not a real model id.
 const CUSTOM_MODEL = "__custom__";
+// Likewise for the provider picker's entry that opens Settings › Assistants.
+const MORE_ASSISTANTS = "__more__";
 
 // Small, safe first tasks that show the core loop: the agent reads, proposes, and you review.
 const FIRST_TASKS = [
@@ -84,35 +86,6 @@ const FIRST_TASKS = [
 
 function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
-}
-
-// API providers come from the connection list: the ones the user added, plus built-in ones with
-// a saved key. The pane's current provider stays listed so its selection still shows.
-function providerGroups(connections: ConnectionStatus[], currentId: string) {
-  const apiIds = new Set(
-    connections.filter((connection) => connection.kind === "api-key").map((c) => c.id),
-  );
-  if (providerMeta(currentId).kind === "api-key") apiIds.add(currentId);
-  return [
-    {
-      label: "On this computer",
-      providers: PROVIDERS.filter((p) => p.kind === "cli" || p.kind === "local"),
-    },
-    {
-      label: "Agents",
-      providers: [
-        ...PROVIDERS.filter((p) => p.kind === "agent"),
-        // Other ACP agents installed on this computer.
-        ...connections
-          .filter(
-            (connection) =>
-              connection.kind === "agent" && !PROVIDERS.some((p) => p.id === connection.id),
-          )
-          .map((connection) => providerMeta(connection.id)),
-      ],
-    },
-    { label: "API providers", providers: [...apiIds].map((id) => providerMeta(id)) },
-  ].filter((group) => group.providers.length > 0);
 }
 
 export function PermissionCard(props: {
@@ -388,6 +361,7 @@ export function Pane(props: {
   const provider = providerMeta(pane.providerId);
   const isConfigured = connection?.state === "ready";
   const readyCount = connections.filter((candidate) => candidate.state === "ready").length;
+  const picker = pickerGroups(connections, pane.providerId);
   const modelLabel = models.find((model) => model.id === pane.modelId)?.label ?? pane.modelId;
 
   // Whoever reviews the changes should not be the connection that made them; only fall back to it
@@ -512,13 +486,17 @@ export function Pane(props: {
             <>
               <Select
                 value={pane.providerId}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  if (value === MORE_ASSISTANTS) {
+                    props.onOpenSettings();
+                    return;
+                  }
                   onChange({
                     providerId: value,
                     modelId: usesDefaultModel(providerMeta(value).kind) ? DEFAULT_CLI_MODEL_ID : "",
                     contextWindow: null,
-                  })
-                }
+                  });
+                }}
               >
                 <SelectTrigger
                   aria-label="Provider"
@@ -527,7 +505,7 @@ export function Pane(props: {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="min-w-[14rem]">
-                  {providerGroups(connections, pane.providerId).map((group, groupIndex) => (
+                  {picker.groups.map((group, groupIndex) => (
                     <SelectGroup key={group.label}>
                       {groupIndex > 0 && <SelectSeparator />}
                       <SelectLabel>{group.label}</SelectLabel>
@@ -555,6 +533,14 @@ export function Pane(props: {
                       })}
                     </SelectGroup>
                   ))}
+                  {picker.more && (
+                    <>
+                      <SelectSeparator />
+                      <SelectItem value={MORE_ASSISTANTS} className="text-xs">
+                        {picker.more}
+                      </SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
               <span className="select-none text-muted-foreground/50" aria-hidden>
