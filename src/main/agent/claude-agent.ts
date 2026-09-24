@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 
 import { unifiedDiff } from "../../shared/diff";
@@ -77,8 +77,10 @@ function truncate(value: string): string {
 
 function displayPath(projectPath: string, filePath: string): string {
   const relativePath = relative(projectPath, filePath);
+  // Forward slashes on every OS, so a title reads the same as Git status, @ mentions, and the
+  // review bar, and the path it names can be handed back to undo unchanged.
   return relativePath && !relativePath.startsWith("..") && !isAbsolute(relativePath)
-    ? relativePath
+    ? relativePath.split(sep).join("/")
     : filePath;
 }
 
