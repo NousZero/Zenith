@@ -210,6 +210,8 @@ const MIGRATIONS: readonly string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  // Whether a session adds notes from other sessions to its prompts; off for every old session.
+  `ALTER TABLE sessions ADD COLUMN recall_past_sessions INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

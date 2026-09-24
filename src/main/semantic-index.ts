@@ -67,12 +67,13 @@ export function createSemanticIndex(db: DatabaseSync, embed: Embedder) {
       "INSERT OR REPLACE INTO message_embeddings (message_id, model, vector) VALUES (?, ?, ?)",
     ),
     vectors: db.prepare(
-      `SELECT e.vector, m.role, m.content, p.name AS pane_name, s.name AS session_name
+      `SELECT e.vector, m.role, m.content, m.created_at, p.name AS pane_name,
+              s.name AS session_name
        FROM message_embeddings e
        JOIN messages m ON m.id = e.message_id
        JOIN panes p ON p.id = m.pane_id
        JOIN sessions s ON s.id = p.session_id
-       WHERE e.model = ?`,
+       WHERE e.model = ? AND s.id IS NOT ?`,
     ),
     counts: db.prepare(
       `SELECT (SELECT count(*) FROM message_embeddings WHERE model = ?) AS indexed,
@@ -128,17 +129,26 @@ export function createSemanticIndex(db: DatabaseSync, embed: Embedder) {
       return status();
     },
 
-    async search(question: string, limit: number): Promise<HistoryExcerpt[]> {
+    // Recall passes the session asking, to leave it out, and a floor so weak matches are dropped.
+    async search(
+      question: string,
+      limit: number,
+      options: { excludeSessionId?: string; minScore?: number } = {},
+    ): Promise<HistoryExcerpt[]> {
       const activeModel = model();
       if (!activeModel || question.trim() === "") return [];
       await indexNew(activeModel, MAX_NEW_PER_SEARCH);
       const [queryVector] = await embed(activeModel, [question.slice(0, MAX_EMBED_CHARS)]);
       if (!queryVector) return [];
       const query = new Float32Array(queryVector);
-      const rows = statements.vectors.all(activeModel) as unknown as {
+      const rows = statements.vectors.all(
+        activeModel,
+        options.excludeSessionId ?? null,
+      ) as unknown as {
         vector: Uint8Array;
         role: ChatRole;
         content: string;
+        created_at: number;
         pane_name: string;
         session_name: string;
       }[];
@@ -152,6 +162,7 @@ export function createSemanticIndex(db: DatabaseSync, embed: Embedder) {
           );
           return { row, score: cosine(query, vector) };
         })
+        .filter(({ score }) => score >= (options.minScore ?? -1))
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map(({ row }) => ({
@@ -162,6 +173,7 @@ export function createSemanticIndex(db: DatabaseSync, embed: Embedder) {
             row.content.length > EXCERPT_MAX_CHARS
               ? `${row.content.slice(0, EXCERPT_MAX_CHARS)}…`
               : row.content,
+          at: row.created_at,
         }));
     },
   };

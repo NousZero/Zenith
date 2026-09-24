@@ -116,7 +116,8 @@ are already on the computer.
   attachments, and a Project board. An extra already in use before the switch is checked starts
   on, so nothing running disappears from view.
 - **History:** full-text search, questions answered from past sessions, optional local embeddings,
-  and token-use insights — not gated behind an Extras switch.
+  and token-use insights — not gated behind an Extras switch. A per-session "Recall past sessions"
+  switch, off by default, adds a few matching notes from other sessions to each prompt.
 - **Settings:** four tabs — General (appearance, Extras), Assistants (providers), Agent behaviour
   (Soul, Role, Agents, Skills, Commands), Safety (posture, permission rules, sandboxing, MCP
   servers, activity record, Report a problem).

@@ -324,6 +324,9 @@ export function Pane(props: {
   singlePane?: boolean;
   onExport?(kind: "markdown" | "html"): void;
   onShowContext?(): void;
+  // The session's "Recall past sessions" switch, kept on the session rather than the pane.
+  recallPastSessions: boolean;
+  onRecallChange(on: boolean): void;
   onRetry(): void;
   onUndo(): void;
   onBranch(messageId: string): void;
@@ -709,6 +712,21 @@ export function Pane(props: {
                 <ClipboardList />
                 Plan mode (read only)
               </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={props.recallPastSessions}
+                onCheckedChange={props.onRecallChange}
+                className="items-start"
+              >
+                <History className="mt-0.5" />
+                <span className="flex max-w-64 flex-col gap-0.5">
+                  Recall past sessions
+                  <span className="text-[11px] leading-snug text-muted-foreground">
+                    Adds matching notes from your other conversations to each message in this
+                    session. They are sent to the assistant with your message, so they leave this
+                    computer if the assistant runs online.
+                  </span>
+                </span>
+              </DropdownMenuCheckboxItem>
               <DropdownMenuItem onSelect={props.onChooseAgent}>
                 <Bot />
                 {props.agentName ? "Change agent…" : "Choose agent…"}
@@ -946,6 +964,13 @@ export function Pane(props: {
                         </span>
                       ) : null}
                       <span className="whitespace-pre-wrap break-words">{message.content}</span>
+                      {message.recalled ? (
+                        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <History className="size-3" aria-hidden />
+                          Recalled {message.recalled} {message.recalled === 1 ? "note" : "notes"}{" "}
+                          from past sessions
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 ) : message.role === "assistant" ? (

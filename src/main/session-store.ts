@@ -58,7 +58,8 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
   const statements = {
     list: db.prepare("SELECT id, name, updated_at FROM sessions ORDER BY updated_at DESC"),
     session: db.prepare(
-      "SELECT id, name, memory_text, personality_id, updated_at FROM sessions WHERE id = ?",
+      `SELECT id, name, memory_text, personality_id, updated_at, recall_past_sessions
+       FROM sessions WHERE id = ?`,
     ),
     panes: db.prepare(
       `SELECT id, name, provider_id, model_id, included, memory_enabled, prompt_tokens,
@@ -70,11 +71,13 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
       "SELECT id, role, content, images FROM messages WHERE pane_id = ? ORDER BY position",
     ),
     upsertSession: db.prepare(
-      `INSERT INTO sessions (id, name, memory_text, personality_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO sessions (id, name, memory_text, personality_id, created_at, updated_at,
+                             recall_past_sessions)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET
          name = excluded.name, memory_text = excluded.memory_text,
-         personality_id = excluded.personality_id, updated_at = excluded.updated_at`,
+         personality_id = excluded.personality_id, updated_at = excluded.updated_at,
+         recall_past_sessions = excluded.recall_past_sessions`,
     ),
     upsertPane: db.prepare(
       `INSERT INTO panes (id, session_id, position, name, provider_id, model_id, included,
@@ -152,6 +155,7 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
             memory_text: string;
             personality_id: string;
             updated_at: number;
+            recall_past_sessions: number;
           }
         | undefined;
       if (!row) return undefined;
@@ -163,6 +167,7 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
         personalityId: row.personality_id,
         panes,
         updatedAt: row.updated_at,
+        ...(row.recall_past_sessions === 1 ? { recallPastSessions: true } : {}),
       };
     },
 
@@ -176,6 +181,7 @@ export function createSessionStore(db: DatabaseSync, now: () => number = Date.no
           session.personalityId,
           timestamp,
           session.updatedAt,
+          session.recallPastSessions ? 1 : 0,
         );
         session.panes.forEach((pane, paneIndex) => {
           statements.upsertPane.run(

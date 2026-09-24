@@ -28,12 +28,12 @@ export function createHistoryStore(db: DatabaseSync, now: () => number = Date.no
        LIMIT ?`,
     ),
     retrieve: db.prepare(
-      `SELECT m.role, m.content, s.name AS session_name, p.name AS pane_name
+      `SELECT m.role, m.content, m.created_at, s.name AS session_name, p.name AS pane_name
        FROM messages_fts
        JOIN messages m ON m.rowid = messages_fts.rowid
        JOIN panes p ON p.id = m.pane_id
        JOIN sessions s ON s.id = p.session_id
-       WHERE messages_fts MATCH ?
+       WHERE messages_fts MATCH ? AND s.id IS NOT ?
        ORDER BY bm25(messages_fts)
        LIMIT ?`,
     ),
@@ -91,12 +91,14 @@ export function createHistoryStore(db: DatabaseSync, now: () => number = Date.no
     },
 
     // Keyword (bm25) retrieval; semantic-index.ts adds meaning matches when a model is set.
-    retrieve(question: string): HistoryExcerpt[] {
+    // Recall leaves out the session asking, whose messages the model already has.
+    retrieve(question: string, excludeSessionId: string | null = null): HistoryExcerpt[] {
       const match = toFtsQuery(question, "any");
       if (!match) return [];
-      const rows = statements.retrieve.all(match, RETRIEVE_LIMIT) as unknown as {
+      const rows = statements.retrieve.all(match, excludeSessionId, RETRIEVE_LIMIT) as unknown as {
         role: ChatRole;
         content: string;
+        created_at: number;
         session_name: string;
         pane_name: string;
       }[];
@@ -108,6 +110,7 @@ export function createHistoryStore(db: DatabaseSync, now: () => number = Date.no
           row.content.length > EXCERPT_MAX_CHARS
             ? `${row.content.slice(0, EXCERPT_MAX_CHARS)}…`
             : row.content,
+        at: row.created_at,
       }));
     },
 

@@ -14,6 +14,7 @@ import {
   shouldCompact,
 } from "../shared/context";
 import { buildFanOutMessages } from "../shared/fan-out";
+import { buildRecallPrompt } from "../shared/history";
 import { PLAN_MODE_INSTRUCTIONS } from "../shared/library";
 import { personalityPrompt } from "../shared/personalities";
 import { estimateTokens } from "../shared/tokens";
@@ -303,6 +304,7 @@ export function useHarness(
       outgoingPrompt = prompt,
       agent?: LoadedAgent,
       images: ImageAttachment[] = [],
+      recalled = 0,
     ) => {
       if (!pane.modelId) return;
       abortPane(pane.id);
@@ -365,6 +367,7 @@ export function useHarness(
                     role: "user",
                     content: prompt,
                     ...(images.length ? { images } : {}),
+                    ...(recalled > 0 ? { recalled } : {}),
                   },
                 ],
                 promptTokens: estimateTokens(outgoing.map((m) => m.content).join("\n")),
@@ -495,7 +498,24 @@ export function useHarness(
           console.error(`Automatic compaction failed for pane ${pane.id}`, error);
         }
       }
-      startTurn(pane, messages, prompt, outgoingPrompt, agent, images);
+      // Recall sends text from other conversations to this provider, so only when switched on.
+      // Notes go into this one outgoing message; the pane and saved history keep the prompt alone.
+      const current = sessionRef.current;
+      const notes = current.recallPastSessions
+        ? await window.zenith.history.recall(prompt, current.id).catch((error: unknown) => {
+            console.error("Recall failed; sending without notes", error);
+            return [];
+          })
+        : [];
+      startTurn(
+        pane,
+        messages,
+        prompt,
+        buildRecallPrompt(outgoingPrompt, notes),
+        agent,
+        images,
+        notes.length,
+      );
     },
     [abortPane, summarize, startTurn, loadAgent, updatePane],
   );

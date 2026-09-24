@@ -85,6 +85,8 @@ const zenithApi: ZenithApi = {
     search: (query: string): Promise<SearchResult[]> => ipcRenderer.invoke("history:search", query),
     retrieve: (question: string): Promise<HistoryExcerpt[]> =>
       ipcRenderer.invoke("history:retrieve", question),
+    recall: (prompt: string, sessionId: string): Promise<HistoryExcerpt[]> =>
+      ipcRenderer.invoke("history:recall", prompt, sessionId),
     insights: (sinceMs: number): Promise<UsageInsights> =>
       ipcRenderer.invoke("history:insights", sinceMs),
     semanticStatus: (): Promise<SemanticStatus> => ipcRenderer.invoke("history:semanticStatus"),
