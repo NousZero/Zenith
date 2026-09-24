@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { access } from "node:fs/promises";
-import { extname, join, relative } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { spawnResolved } from "../cli/launch";
@@ -312,7 +312,8 @@ export function createLanguageServers(
       const diagnostics = await client?.check(filePath, languageId, text).catch(() => undefined);
       const errors = (diagnostics ?? []).filter((item) => (item.severity ?? 1) === 1);
       if (errors.length === 0) return "";
-      const name = relative(root, filePath) || filePath;
+      // Forward slashes on every OS, matching tool titles and the rest of the app.
+      const name = relative(root, filePath).split(sep).join("/") || filePath;
       const lines = errors.slice(0, MAX_PROBLEMS).map((item) => {
         const start = item.range?.start;
         return `${name}:${(start?.line ?? 0) + 1}:${(start?.character ?? 0) + 1}: ${item.message ?? ""}`;
