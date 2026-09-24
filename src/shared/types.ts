@@ -382,6 +382,17 @@ export interface UsageInsights {
 
 export type PersonaFile = "SOUL.md" | "USER.md";
 
+// The built-in browser's page, as the address bar and toolbar show it.
+export interface BrowserViewState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  // Why the last page failed to load, such as ERR_NAME_NOT_RESOLVED.
+  error: string | null;
+}
+
 export interface ZenithApi {
   connections: {
     list(refresh?: boolean): Promise<ConnectionStatus[]>;
@@ -522,6 +533,20 @@ export interface ZenithApi {
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
   screen: {
     capture(): Promise<ImageAttachment>;
+  };
+  // The built-in browser: one native page drawn over the window at the given bounds.
+  browser: {
+    // An address, with or without a scheme, or words to search for.
+    navigate(urlOrQuery: string): Promise<void>;
+    back(): Promise<void>;
+    forward(): Promise<void>;
+    reload(): Promise<void>;
+    stop(): Promise<void>;
+    setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+    setVisible(visible: boolean): Promise<void>;
+    // Opens the current page in the system's default browser.
+    openExternal(): Promise<void>;
+    onState(listener: (state: BrowserViewState) => void): () => void;
   };
   goals: {
     list(): Promise<Goal[]>;

@@ -48,6 +48,7 @@ import { HistoryDialog, type AskTarget, type HistoryTab } from "./HistoryDialog"
 import { LibraryDialog, type LibraryDialogState, type LibraryDraft } from "./LibraryDialog";
 import { EmptyState } from "./EmptyState";
 import { useExtras } from "./extras";
+import { BrowserView } from "./BrowserView";
 import { FilesView } from "./FilesView";
 import { GoalsView } from "./GoalsView";
 import { leftoverNotice } from "./lib/format";
@@ -153,6 +154,7 @@ export function App() {
   const [restored, setRestored] = useState(false);
   const [activity, setActivity] = useState<ActivityId>("workspace");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [browserTitle, setBrowserTitle] = useState("");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [agentSection, setAgentSection] = useState<AgentBehaviourSection>("soul");
   const [dockOpen, setDockOpen] = useState(false);
@@ -1117,7 +1119,9 @@ export function App() {
               ? ["Workspace", session.name || UNTITLED_SESSION]
               : activity === "files"
                 ? ["Files", folderLabel(dockProjectPath ?? "")]
-                : ["Goals"]
+                : activity === "browser"
+                  ? ["Browser", ...(browserTitle ? [browserTitle] : [])]
+                  : ["Goals"]
           }
           streaming={streamingPaneIds.size > 0}
           dockOpen={dockOpen}
@@ -1169,6 +1173,8 @@ export function App() {
             workspaceView
           ) : activity === "files" ? (
             filesView
+          ) : activity === "browser" ? (
+            <BrowserView onTitleChange={setBrowserTitle} />
           ) : (
             <>
               <PageHeader

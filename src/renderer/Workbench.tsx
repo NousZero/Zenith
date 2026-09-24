@@ -3,6 +3,7 @@ import {
   Bot,
   CalendarClock,
   FolderTree,
+  Globe,
   History,
   Maximize2,
   MessagesSquare,
@@ -51,7 +52,7 @@ function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
-export type ActivityId = "workspace" | "files" | "goals";
+export type ActivityId = "workspace" | "files" | "browser" | "goals";
 
 export function TopBar(props: {
   // Where the user is, such as ["Files", "zenith"].
@@ -228,6 +229,15 @@ export function ActivityRail(props: {
         >
           <FolderTree className="size-4" aria-hidden />
           Files
+        </button>
+        <button
+          type="button"
+          aria-current={props.active === "browser" ? "page" : undefined}
+          onClick={() => props.onSelect("browser")}
+          className={railButton(props.active === "browser")}
+        >
+          <Globe className="size-4" aria-hidden />
+          Browser
         </button>
         {props.extras.goals && (
           <button

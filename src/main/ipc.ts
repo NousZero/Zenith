@@ -43,6 +43,7 @@ import { createLibraryStore } from "./library-store";
 import { createGitRunner, createGitWorkspace, createSnapshotStore, MAX_LISTED_FILES } from "./git";
 import { createMcpConfig } from "./mcp-config";
 import { createBrowser } from "./browser";
+import { createBrowserView } from "./browser-view";
 import { createAuditLog } from "./audit-log";
 import { createGoalsStore } from "./goals-store";
 import { createScreen } from "./screen";
@@ -210,6 +211,7 @@ export function registerIpcHandlers(options: {
     }
   };
   const screenCapture = createScreen();
+  const browserView = createBrowserView();
   const mcp = createMcpConfig(options.join(options.userDataPath, "mcp.json"));
   const attachments = createAttachmentStore(options.join(options.userDataPath, "attachments"));
   const customProviders = createCustomProviderStore(
@@ -971,6 +973,20 @@ export function registerIpcHandlers(options: {
     return attachments.save("image/png", shot.base64);
   });
 
+  // The built-in browser the person uses; see browser-view.ts for how it is kept apart from Zenith.
+  handle("browser:navigate", async (event, urlOrQuery: unknown) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error("The browser needs Zenith's window.");
+    browserView.navigate(window, urlOrQuery);
+  });
+  handle("browser:back", async () => browserView.back());
+  handle("browser:forward", async () => browserView.forward());
+  handle("browser:reload", async () => browserView.reload());
+  handle("browser:stop", async () => browserView.stop());
+  handle("browser:setBounds", async (_event, bounds: unknown) => browserView.setBounds(bounds));
+  handle("browser:setVisible", async (_event, visible: unknown) => browserView.setVisible(visible));
+  handle("browser:openExternal", async () => browserView.openExternal());
+
   handle("audit:list", async (_event, limit: unknown) =>
     audit.list(typeof limit === "number" ? limit : undefined),
   );
@@ -1423,6 +1439,7 @@ export function registerIpcHandlers(options: {
       terminal.stopAll();
       terminals.stopAll();
       browser.closeAll();
+      browserView.destroy();
       db.close();
     },
   };
