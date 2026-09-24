@@ -1,6 +1,6 @@
 {
   "name": "zenith",
-  "version": "0.0.0-private",
+  "version": "0.1.0",
   "private": true,
   "description": "Cross-platform desktop harness for working with multiple AI providers in one session",
   "type": "module",

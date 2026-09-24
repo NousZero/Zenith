@@ -31,6 +31,8 @@ const expectedRuns = new Set([
   // Lifecycle scripts stay off; the end-to-end job fetches only Electron's own binary.
   "node node_modules/electron/install.js",
   "npm run test:e2e:build",
+  // Builds the installable archives for a version tag; they stay with the workflow run.
+  "npm run make",
 ]);
 const expectedRunners = new Set([
   "ubuntu-latest",
@@ -40,8 +42,12 @@ const expectedRunners = new Set([
 ]);
 
 const push = workflow.on.push;
-if (push !== undefined && JSON.stringify(push) !== JSON.stringify({ branches: ["main"] })) {
-  throw new Error("A push trigger may only run on main.");
+if (
+  push !== undefined &&
+  JSON.stringify(push) !== JSON.stringify({ branches: ["main"] }) &&
+  JSON.stringify(push) !== JSON.stringify({ branches: ["main"], tags: ["v*"] })
+) {
+  throw new Error("A push trigger may only run on main and on version tags.");
 }
 if (JSON.stringify(workflow.permissions) !== JSON.stringify({ contents: "read" })) {
   throw new Error("Workflow permissions must be exactly contents: read.");
@@ -81,6 +87,19 @@ for (const [id, job] of jobs) {
       if (scriptName && !Object.hasOwn(packageManifest.scripts, scriptName)) {
         throw new Error(`Workflow references missing package script: ${scriptName}`);
       }
+    }
+    // The package job keeps its archives with the run for a month; nothing is published.
+    if (step.uses?.startsWith("actions/upload-artifact@") && id === "package") {
+      if (
+        step.if !== undefined ||
+        step.with?.path !== "out/make/" ||
+        step.with["include-hidden-files"] !== false ||
+        step.with["retention-days"] !== 30 ||
+        job.if !== "startsWith(github.ref, 'refs/tags/v')"
+      ) {
+        throw new Error("The package job may only keep out/make/ from a version tag.");
+      }
+      continue;
     }
     if (step.uses?.startsWith("actions/upload-artifact@")) {
       const paths = String(step.with?.path ?? "")
