@@ -188,12 +188,45 @@ export function Section(props: { title: string; children: ReactNode; actions?: R
   );
 }
 
+// Ready first, then what is one sign-in away, then what isn't set up on this computer yet.
+const STATE_ORDER: Record<ConnectionStatus["state"], number> = {
+  ready: 0,
+  "sign-in-required": 1,
+  "not-running": 2,
+  "not-installed": 3,
+  "needs-key": 4,
+};
+
+function ConnectionRow({ connection }: { connection: ConnectionStatus }) {
+  return (
+    <li className="flex items-start gap-3 px-4 py-3">
+      <span
+        className={cn(
+          "mt-1.5 size-2.5 shrink-0 rounded-full",
+          providerMeta(connection.id).dotClass,
+          connection.state !== "ready" && "opacity-35",
+        )}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-medium">{connection.label}</span>
+        <span className="text-xs leading-relaxed text-muted-foreground">{connection.detail}</span>
+      </div>
+      <StatusIcon state={connection.state} />
+    </li>
+  );
+}
+
 export function ConnectionsSection(props: {
   connections: ConnectionStatus[];
   refreshing: boolean;
   onRefresh(): void;
 }) {
-  const tools = props.connections.filter((connection) => connection.kind !== "api-key");
+  const tools = props.connections
+    .filter((connection) => connection.kind !== "api-key")
+    .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  // What isn't set up yet stays one click away, so the page opens on what can be used.
+  const usable = tools.filter((c) => STATE_ORDER[c.state] <= STATE_ORDER["sign-in-required"]);
+  const notSetUp = tools.filter((c) => STATE_ORDER[c.state] > STATE_ORDER["sign-in-required"]);
   return (
     <Section
       title="On this computer"
@@ -204,30 +237,33 @@ export function ConnectionsSection(props: {
         </Button>
       }
     >
-      <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
-        {tools.length === 0 ? (
+      {tools.length === 0 ? (
+        <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
           <li className="p-4 text-[13px] text-muted-foreground">Checking this computer…</li>
-        ) : (
-          tools.map((connection) => (
-            <li key={connection.id} className="flex items-start gap-3 px-4 py-3">
-              <span
-                className={cn(
-                  "mt-1.5 size-2.5 shrink-0 rounded-full",
-                  providerMeta(connection.id).dotClass,
-                  connection.state !== "ready" && "opacity-35",
-                )}
-              />
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="text-sm font-medium">{connection.label}</span>
-                <span className="text-xs leading-relaxed text-muted-foreground">
-                  {connection.detail}
-                </span>
-              </div>
-              <StatusIcon state={connection.state} />
-            </li>
-          ))
-        )}
-      </ul>
+        </ul>
+      ) : (
+        <>
+          {usable.length > 0 && (
+            <ul className="flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
+              {usable.map((connection) => (
+                <ConnectionRow key={connection.id} connection={connection} />
+              ))}
+            </ul>
+          )}
+          {notSetUp.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer select-none text-muted-foreground">
+                Not installed or not running ({notSetUp.length})
+              </summary>
+              <ul className="mt-2 flex flex-col divide-y divide-border border border-border rounded-lg overflow-hidden">
+                {notSetUp.map((connection) => (
+                  <ConnectionRow key={connection.id} connection={connection} />
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
         <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         CLI tools run read-only in an empty folder with their own sign-in. Agents work in that
