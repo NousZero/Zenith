@@ -100,7 +100,7 @@ export function PermissionCard(props: {
     <div
       role="alertdialog"
       aria-label="Agent approval"
-      className="flex flex-col gap-2.5 rounded-lg border border-warning/40 bg-warning/10 p-3"
+      className="flex animate-rise-in flex-col gap-2.5 rounded-xl border border-warning/40 bg-warning/10 p-3"
     >
       <div className="flex items-start gap-2.5">
         <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
@@ -802,7 +802,7 @@ export function Pane(props: {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+          className="scroll-edges min-h-0 flex-1 overflow-y-auto px-4 py-4"
         >
           {pane.messages.length === 0 && pane.lastError === null ? (
             !isConfigured ? (
@@ -893,7 +893,7 @@ export function Pane(props: {
                               key={task}
                               type="button"
                               onClick={() => props.onSuggest?.(task)}
-                              className="cursor-pointer rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="cursor-pointer rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-[color,border-color,scale] hover:border-primary/50 active:scale-[0.97] active:duration-75 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               {task}
                             </button>

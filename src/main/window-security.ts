@@ -34,10 +34,24 @@ interface GuardedWebContents {
   setWindowOpenHandler(handler: (details: { url: string }) => { action: "deny" }): void;
 }
 
-export function createMainWindowOptions(preload: string): BrowserWindowConstructorOptions {
+export function createMainWindowOptions(
+  preload: string,
+  platform: NodeJS.Platform = process.platform,
+): BrowserWindowConstructorOptions {
   return {
     autoHideMenuBar: true,
     backgroundColor: "#0f1115",
+    // On macOS the window is a native one: the traffic lights sit in Zenith's own top bar, and the
+    // sidebar shows the system's translucent sidebar material. The workspace itself stays opaque.
+    ...(platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          trafficLightPosition: { x: 18, y: 18 },
+          vibrancy: "sidebar" as const,
+          visualEffectState: "followWindow" as const,
+          backgroundColor: "#00000000",
+        }
+      : {}),
     height: 800,
     minHeight: 600,
     minWidth: 960,

@@ -358,7 +358,7 @@ export function Composer(props: {
         </ul>
       )}
       <div
-        className="rounded-xl border border-input bg-card shadow-lg shadow-black/25 transition-colors duration-150 focus-within:border-ring/70 focus-within:ring-2 focus-within:ring-ring/20"
+        className="material rounded-2xl border border-input transition-colors duration-150 focus-within:border-ring/70 focus-within:ring-2 focus-within:ring-ring/20"
         onDragOver={(event) => {
           if ([...event.dataTransfer.items].some((item) => item.type.startsWith("image/"))) {
             event.preventDefault();

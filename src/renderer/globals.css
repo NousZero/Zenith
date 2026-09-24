@@ -49,6 +49,70 @@
   --radius-sm: calc(var(--radius) - 4px);
 
   --animate-fade-in: zenith-fade-in 150ms ease-out;
+  /* A critically damped spring (damping 1.0, response 0.35 s), sampled for CSS: no overshoot,
+     settles in 450 ms. Apple's default for UI that wasn't thrown by a gesture. */
+  --ease-spring: linear(
+    0,
+    0.092 6.2%,
+    0.268 12.5%,
+    0.447 18.8%,
+    0.599 25%,
+    0.718 31.2%,
+    0.805 37.5%,
+    0.868 43.8%,
+    0.911 50%,
+    0.941 56.2%,
+    0.961 62.5%,
+    0.975 68.8%,
+    0.984 75%,
+    0.989 81.2%,
+    0.993 87.5%,
+    0.996 93.8%,
+    1
+  );
+  /* Menus and popovers materialize from the control that opened them, and leave the same way,
+     a little faster, so a quick second click never waits on the exit. */
+  --animate-materialize-in: zenith-materialize-in 300ms var(--ease-spring) both;
+  /* Panels tied to the chat box (review bar, plan strip, approvals) rise out of it. */
+  --animate-rise-in: zenith-rise-in 320ms var(--ease-spring) both;
+
+  @keyframes zenith-rise-in {
+    from {
+      opacity: 0;
+      translate: 0 6px;
+    }
+    to {
+      opacity: 1;
+      translate: 0 0;
+    }
+  }
+  --animate-materialize-out: zenith-materialize-out 140ms cubic-bezier(0.4, 0, 1, 1) both;
+
+  @keyframes zenith-materialize-in {
+    from {
+      opacity: 0;
+      scale: 0.96;
+      filter: blur(3px);
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+      filter: blur(0);
+    }
+  }
+
+  @keyframes zenith-materialize-out {
+    from {
+      opacity: 1;
+      scale: 1;
+      filter: blur(0);
+    }
+    to {
+      opacity: 0;
+      scale: 0.96;
+      filter: blur(3px);
+    }
+  }
   --animate-typing: zenith-typing 1.2s ease-in-out infinite;
 
   @keyframes zenith-fade-in {
@@ -327,7 +391,7 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     font-size: 13.5px;
-    line-height: 1.55;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -519,15 +583,132 @@
   background-color: hsl(var(--background));
 }
 
-/* Small section labels: sentence case and medium weight rather than tracked monospace caps. */
+/* Small section labels: sentence case and medium weight. Small type reads better with a touch of
+   positive tracking; large display type gets negative tracking instead (see .font-serif). */
 .eyebrow {
   font-family: var(--font-sans);
   font-size: 11.5px;
   font-weight: 500;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
+}
+
+/* Display type tightens as it grows, with tight leading, as system fonts are drawn to. */
+.font-serif {
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-optical-sizing: auto;
+}
+
+/* A floating material: translucent, blurred, with a faint bright top edge where light catches it.
+   Menus, popovers, and the chat box use it; heavier structural regions (the rail) stay solid. */
+.material {
+  background-color: color-mix(in oklab, hsl(var(--popover)) 78%, transparent);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.06),
+    0 12px 32px -8px rgb(0 0 0 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.2);
+}
+
+/* Where content meets floating chrome, it fades instead of stopping at a hard line. */
+.scroll-edges {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 14px,
+    #000 calc(100% - 20px),
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion becomes a short cross-fade: no scaling, blurring, or pressing in. */
+  *,
+  *::before,
+  *::after {
+    scale: none !important;
+    filter: none !important;
+  }
+  .animate-rise-in {
+    animation: zenith-fade-in 120ms ease-out both !important;
+  }
+  [data-state="open"],
+  [data-state="delayed-open"] {
+    animation: zenith-fade-in 120ms ease-out both !important;
+  }
+  [data-state="closed"] {
+    animation-duration: 80ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .material {
+    background-color: hsl(var(--popover));
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --border: 0 0% 45%;
+    --input: 0 0% 55%;
+  }
+  .material {
+    background-color: hsl(var(--popover));
+    backdrop-filter: none;
+    border-color: hsl(var(--foreground) / 0.5);
+  }
+  .scroll-edges {
+    mask-image: none;
+  }
 }
 
 .theme-switching,
 .theme-switching * {
   transition: none !important;
+}
+
+/* macOS window chrome. The top bar is the window's drag handle, since there is no title bar;
+   anything you can click inside it opts out. */
+html[data-platform="mac"] .window-drag {
+  -webkit-app-region: drag;
+}
+html[data-platform="mac"] .window-drag :is(button, a, input, textarea, select, [role="button"]) {
+  -webkit-app-region: no-drag;
+}
+/* The traffic lights sit where the brand began. */
+html[data-platform="mac"] .brand-cell {
+  padding-left: 84px;
+}
+/* The sidebar and the brand corner above it let the system's sidebar material through, as one
+   continuous column from the top of the window to the bottom; the workspace stays opaque. */
+html[data-platform="mac"] body {
+  background: transparent;
+}
+html[data-platform="mac"] .sidebar,
+html[data-platform="mac"] .brand-cell {
+  background-color: color-mix(in oklab, hsl(var(--card)) 55%, transparent);
+}
+/* The sidebar runs uninterrupted to the top of the window, as in Finder or Mail: the top bar's
+   fill and its bottom rule start where the sidebar ends. */
+html[data-platform="mac"] .top-bar {
+  border-bottom-color: transparent;
+  background:
+    linear-gradient(to right, transparent 224px, hsl(var(--border)) 224px) bottom / 100% 1px
+      no-repeat,
+    linear-gradient(to right, transparent 224px, hsl(var(--card)) 224px);
+}
+html[data-platform="mac"] .brand-cell {
+  border-right-color: hsl(var(--border));
+}
+html[data-platform="mac"] main,
+html[data-platform="mac"] section[aria-label="Bottom panel"] {
+  background-color: hsl(var(--background));
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-platform="mac"] .sidebar,
+  html[data-platform="mac"] .brand-cell {
+    background-color: hsl(var(--card));
+  }
 }

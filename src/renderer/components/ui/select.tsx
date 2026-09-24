@@ -63,7 +63,7 @@ export function SelectContent({
         position={position}
         sideOffset={4}
         className={cn(
-          "relative z-50 max-h-80 min-w-[10rem] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl shadow-black/40 data-[state=open]:animate-fade-in",
+          "material relative z-50 max-h-80 min-w-[10rem] origin-(--radix-select-content-transform-origin) overflow-hidden rounded-xl border border-border text-popover-foreground data-[state=open]:animate-materialize-in data-[state=closed]:animate-materialize-out",
           className,
         )}
         {...props}

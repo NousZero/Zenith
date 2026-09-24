@@ -70,9 +70,9 @@ export function TopBar(props: {
   return (
     <header
       aria-label="Zenith top bar"
-      className="col-span-full grid h-[52px] grid-cols-[224px_minmax(0,1fr)_auto] items-center border-b border-border bg-card shadow-[0_10px_28px_rgba(0,0,0,0.18)]"
+      className="window-drag top-bar col-span-full grid h-[52px] grid-cols-[224px_minmax(0,1fr)_auto] items-center border-b border-border bg-card"
     >
-      <div className="flex h-full min-w-0 items-center gap-2.5 border-r border-border px-[18px]">
+      <div className="brand-cell flex h-full min-w-0 items-center gap-2.5 border-r border-border px-[18px]">
         <span
           aria-hidden
           className="grid size-[22px] shrink-0 place-items-center rounded-md bg-primary font-serif text-[12px] font-bold text-primary-foreground"
@@ -198,7 +198,7 @@ export function ActivityRail(props: {
 
   const railButton = (active: boolean) =>
     cn(
-      "relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      "relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-[color,background-color,scale] active:scale-[0.98] active:duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       active
         ? "bg-accent font-medium text-foreground"
         : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -207,7 +207,7 @@ export function ActivityRail(props: {
   return (
     <nav
       aria-label="Primary activity"
-      className="row-span-2 flex min-h-0 flex-col overflow-y-auto border-r border-border bg-card"
+      className="sidebar row-span-2 flex min-h-0 flex-col overflow-y-auto border-r border-border bg-card"
     >
       <div className="flex flex-col gap-0.5 px-2.5 pt-4">
         <button
@@ -262,7 +262,7 @@ export function ActivityRail(props: {
                   props.onSelect("workspace");
                 }}
                 className={cn(
-                  "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left text-[12.5px] transition-[color,background-color,scale] active:scale-[0.98] active:duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   isActive
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
