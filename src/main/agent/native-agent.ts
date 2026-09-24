@@ -170,9 +170,13 @@ function parseArguments(call: ToolCall): Record<string, unknown> | undefined {
 
 function addUsage(total: TokenUsage | undefined, next: TokenUsage | undefined) {
   if (!next) return total;
+  const cacheRead = (total?.cacheReadTokens ?? 0) + (next.cacheReadTokens ?? 0);
+  const cacheWrite = (total?.cacheWriteTokens ?? 0) + (next.cacheWriteTokens ?? 0);
   return {
     inputTokens: (total?.inputTokens ?? 0) + next.inputTokens,
     outputTokens: (total?.outputTokens ?? 0) + next.outputTokens,
+    ...(cacheRead ? { cacheReadTokens: cacheRead } : {}),
+    ...(cacheWrite ? { cacheWriteTokens: cacheWrite } : {}),
   };
 }
 

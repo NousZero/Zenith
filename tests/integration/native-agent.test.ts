@@ -406,7 +406,10 @@ describe("native agent loop", () => {
     const event = (value: unknown) => JSON.stringify(value);
     const server = await fakeServer([
       () => [
-        event({ type: "message_start", message: { usage: { input_tokens: 20 } } }),
+        event({
+          type: "message_start",
+          message: { usage: { input_tokens: 4, cache_creation_input_tokens: 16 } },
+        }),
         event({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
         event({
           type: "content_block_delta",
@@ -432,7 +435,10 @@ describe("native agent loop", () => {
         event({ type: "message_stop" }),
       ],
       () => [
-        event({ type: "message_start", message: { usage: { input_tokens: 30 } } }),
+        event({
+          type: "message_start",
+          message: { usage: { input_tokens: 5, cache_read_input_tokens: 25 } },
+        }),
         event({
           type: "content_block_delta",
           index: 0,
@@ -448,18 +454,31 @@ describe("native agent loop", () => {
 
     expect(chunks.map((chunk) => chunk.delta).join("")).toBe("Reading.\n\nIt says alpha.");
     const second = server.requests[1] as {
-      system: string;
-      messages: { role: string; content: { type: string; content?: string }[] }[];
+      system: { text: string; cache_control?: unknown }[];
+      messages: {
+        role: string;
+        content: { type: string; content?: string; cache_control?: unknown }[];
+      }[];
     };
-    expect(second.system).toContain("Be careful.");
+    expect(second.system[0]?.text).toContain("Be careful.");
     expect(second.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
     expect(second.messages[2]?.content[0]).toMatchObject({
       type: "tool_result",
       content: "1: alpha\n2: ",
     });
+    // Cache breakpoints on the system prompt and the newest block only, so the next step reads
+    // this one's prefix back.
+    const ephemeral = { type: "ephemeral" };
+    expect(second.system[0]?.cache_control).toEqual(ephemeral);
+    expect(second.messages[2]?.content.at(-1)?.cache_control).toEqual(ephemeral);
+    expect(
+      second.messages
+        .flatMap((message) => message.content)
+        .filter((block) => block.cache_control !== undefined),
+    ).toHaveLength(1);
     expect(chunks.at(-1)).toMatchObject({
-      usage: { inputTokens: 50, outputTokens: 11 },
-      contextUsage: { inputTokens: 30, outputTokens: 4 },
+      usage: { inputTokens: 50, outputTokens: 11, cacheReadTokens: 25, cacheWriteTokens: 16 },
+      contextUsage: { inputTokens: 30, outputTokens: 4, cacheReadTokens: 25 },
     });
   });
 

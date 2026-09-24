@@ -74,6 +74,9 @@ export interface ContextSnapshot {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+  // Anthropic prompt caching: the part of inputTokens read from or written to the cache.
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
 }
 
 export type AgentActivityStatus = "running" | "awaiting-approval" | "done" | "failed" | "denied";

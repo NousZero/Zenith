@@ -4,8 +4,9 @@ import type {
   Model,
   ProviderAdapter,
   SendMessageRequest,
+  TokenUsage,
 } from "../../shared/types";
-import { anthropicContent } from "./content";
+import { anthropicContent, anthropicUsage, cachedSystem, withCacheBreakpoint } from "./content";
 import { readSseLines } from "./sse";
 import { providerFetch } from "./http";
 
@@ -65,8 +66,8 @@ export function createAnthropicAdapter(getApiKey: () => Promise<string>): Provid
           model: req.model,
           max_tokens: 4096,
           stream: true,
-          ...(system ? { system } : {}),
-          messages: rest,
+          ...(system ? { system: cachedSystem(system) } : {}),
+          messages: withCacheBreakpoint(rest),
         }),
         ...(req.signal ? { signal: req.signal } : {}),
       });
@@ -74,19 +75,26 @@ export function createAnthropicAdapter(getApiKey: () => Promise<string>): Provid
         const text = await response.text().catch(() => "");
         throw new Error(`Anthropic request failed: ${response.status} ${text}`);
       }
+      let usage: TokenUsage | undefined;
       for await (const payload of readSseLines(response, req.signal)) {
         const parsed = JSON.parse(payload) as {
           type: string;
           delta?: { text?: string };
+          message?: { usage?: Record<string, unknown> };
+          usage?: { output_tokens?: number };
         };
-        if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+        if (parsed.type === "message_start" && parsed.message?.usage) {
+          usage = anthropicUsage(parsed.message.usage);
+        } else if (parsed.type === "message_delta" && usage && parsed.usage?.output_tokens) {
+          usage = { ...usage, outputTokens: parsed.usage.output_tokens };
+        } else if (parsed.type === "content_block_delta" && parsed.delta?.text) {
           yield { delta: parsed.delta.text, done: false };
         } else if (parsed.type === "message_stop") {
-          yield { delta: "", done: true };
+          yield { delta: "", done: true, ...(usage ? { usage } : {}) };
           return;
         }
       }
-      yield { delta: "", done: true };
+      yield { delta: "", done: true, ...(usage ? { usage } : {}) };
     },
   };
 }

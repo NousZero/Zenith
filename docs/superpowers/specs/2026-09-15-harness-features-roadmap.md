@@ -490,3 +490,29 @@ elsewhere instead of making you switch assistants and retype.
   stand-in Gemini (which answers as an account out of quota when `ZENITH_FAKE_QUOTA=1`), clicks
   Continue with Claude Code, and sees Claude's reply report the two earlier messages, with the
   prompt shown once. `launchApp` takes extra environment variables for this.
+
+## Prompt caching for Anthropic requests (implemented 2026-09-24)
+
+Every turn resends the whole conversation, and the native agent resends it on every tool step, so
+Anthropic requests now mark what can be read back from Anthropic's prompt cache.
+
+- Two of the four allowed `cache_control: {type: "ephemeral"}` breakpoints: the system prompt, now
+  sent as one text block, which with the tools in front of it caches both; and the last block of
+  the last message. The next request repeats that prefix and adds one turn (or one tool step), and
+  Anthropic finds the earlier entry by looking back from the new breakpoint. That covers "the
+  message before the new turn" without spending a third breakpoint on it. No beta header is needed.
+- The helpers (`cachedSystem`, `withCacheBreakpoint`, `anthropicUsage`) live in
+  `src/main/providers/content.ts` and are used by the chat adapter (`providers/anthropic.ts`) and by
+  `anthropicModel` in `agent/models.ts`, which serves the native tool loop and the
+  Anthropic-compatible custom providers.
+- `TokenUsage` gains optional `cacheReadTokens` and `cacheWriteTokens`, filled from the response's
+  `cache_read_input_tokens` and `cache_creation_input_tokens` and summed across tool steps.
+  `inputTokens` still counts the whole prompt. The chat adapter now reports usage at all, which it
+  didn't before. The window doesn't show the cache counts yet.
+- OpenAI and OpenRouter need no change: OpenAI caches long prefixes by itself, and both get the
+  system prompt first and the history in order, the same on every turn.
+- Prompts under Anthropic's minimum cacheable length (about 1,024 tokens, more for some models)
+  simply aren't cached; nothing fails.
+- **Verified:** the adapter's unit tests check the breakpoints in the request body, that earlier
+  turns go unchanged, and the cache counts in the reported usage; the native agent's integration
+  test checks the breakpoints on a tool step and the summed cache counts.
