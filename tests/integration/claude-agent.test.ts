@@ -9,8 +9,9 @@ import { openDatabase } from "../../src/main/database";
 import { parsePermissionRules } from "../../src/shared/permissions";
 import { createProjectStore } from "../../src/main/project-store";
 import type { ChatChunk, PermissionPrompt } from "../../src/shared/types";
+import { launchable } from "../fixtures/windows-shim";
 
-const fakeClaude = join(import.meta.dirname, "..", "fixtures", "fake-claude-agent.mjs");
+const fakeClaude = launchable(join(import.meta.dirname, "..", "fixtures", "fake-claude-agent.mjs"));
 
 describe("Claude Code agent mode", () => {
   let dir: string;

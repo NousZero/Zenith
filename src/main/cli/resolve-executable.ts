@@ -47,8 +47,9 @@ export async function resolveExecutable(
   name: string,
   environment: ExecutableEnvironment,
 ): Promise<string | undefined> {
-  // ponytail: Windows .cmd/.bat shims need a shell to run; only .exe is supported for now.
-  const fileNames = environment.platform === "win32" ? [`${name}.exe`] : [name];
+  // On Windows, npm installs tools as .cmd shims beside their .exe siblings; launch.ts runs those
+  // without a shell.
+  const fileNames = environment.platform === "win32" ? [`${name}.exe`, `${name}.cmd`] : [name];
   for (const directory of searchDirectories(environment)) {
     for (const fileName of fileNames) {
       const candidate = join(directory, fileName);

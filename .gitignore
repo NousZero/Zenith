@@ -55,3 +55,6 @@ diagnostics-*.json
 
 # Evidence from the retired workbench, kept locally only.
 tasks/
+
+# npm-style shims tests generate beside fixtures on Windows
+tests/fixtures/*.cmd

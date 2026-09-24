@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnResolved } from "../cli/launch";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -277,11 +277,9 @@ export async function* runClaudeAgent(
     ...(request.model === DEFAULT_MODEL_ID ? [] : [`--model=${assertSafeModelId(request.model)}`]),
   ];
 
-  const child = spawn(binary, args, {
+  const child = spawnResolved(binary, args, {
     cwd: request.projectPath,
     env: deps.childEnv(binary),
-    shell: false,
-    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });
   let stderr = "";

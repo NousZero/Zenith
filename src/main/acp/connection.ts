@@ -1,4 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams } from "node:child_process";
+
+import { spawnResolved } from "../cli/launch";
 import { createInterface } from "node:readline";
 
 const MAX_STDERR_CHARS = 16_000;
@@ -39,11 +41,9 @@ export class AcpConnection {
   private exitError: Error | undefined;
 
   constructor(options: { command: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }) {
-    this.child = spawn(options.command, options.args, {
+    this.child = spawnResolved(options.command, options.args, {
       cwd: options.cwd,
       env: options.env,
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
     this.child.stderr.setEncoding("utf8");

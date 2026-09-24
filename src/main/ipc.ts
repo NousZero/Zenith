@@ -9,7 +9,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
-import { execFile } from "node:child_process";
+import { execFileResolved } from "./cli/launch";
 import { existsSync, mkdirSync } from "node:fs";
 import { access, readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
@@ -322,7 +322,7 @@ export function registerIpcHandlers(options: {
     resolveBinary,
     runCommand: (binaryPath, args) =>
       new Promise((resolve) => {
-        execFile(
+        execFileResolved(
           binaryPath,
           args,
           { cwd: cliSandbox, env: childEnv(binaryPath), timeout: DETECTION_COMMAND_TIMEOUT_MS },
@@ -574,7 +574,7 @@ export function registerIpcHandlers(options: {
     const binary = await resolveBinary(CLI_BINARIES["claude-code"]);
     if (!binary) throw new Error("Claude Code isn't installed on this computer.");
     return new Promise<string>((resolve) => {
-      const child = execFile(
+      const child = execFileResolved(
         binary,
         ["-p", command, "--output-format", "text"],
         { cwd: cliSandbox, env: childEnv(binary), timeout: 120_000, maxBuffer: 4_000_000 },
