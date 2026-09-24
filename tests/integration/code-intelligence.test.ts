@@ -28,10 +28,19 @@ describe("formatters, language servers, and MCP tools", () => {
     expect(await formatFile(project, file, env())).toBeUndefined();
 
     await mkdir(join(project, "node_modules", ".bin"), { recursive: true });
-    const prettier = join(project, "node_modules", ".bin", "prettier");
-    // Stands in for `prettier --write <file>`.
-    await writeFile(prettier, '#!/bin/sh\nprintf "const a = 1;\\n" > "$2"\n');
+    // Stands in for `prettier --write <file>`; on Windows npm installs it as prettier.cmd.
+    const prettier = join(
+      project,
+      "node_modules",
+      ".bin",
+      process.platform === "win32" ? "prettier.js" : "prettier",
+    );
+    await writeFile(
+      prettier,
+      '#!/usr/bin/env node\nrequire("node:fs").writeFileSync(process.argv[3], "const a = 1;\\n");\n',
+    );
     await chmod(prettier, 0o755);
+    launchable(prettier);
     expect(await formatFile(project, file, env())).toBe("Prettier");
     expect(await readFile(file, "utf8")).toBe("const a = 1;\n");
     expect(await formatFile(project, file, env())).toBeUndefined();

@@ -1,6 +1,7 @@
-import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
+
+import { execFileResolved } from "../cli/launch";
 
 const FORMAT_TIMEOUT_MS = 15_000;
 const PRETTIER_EXTENSIONS = new Set(
@@ -25,9 +26,9 @@ const exists = (path: string) =>
 // standard formatter for Go, Rust, and Python when it is on the PATH.
 async function formatterFor(projectPath: string, filePath: string): Promise<Formatter | undefined> {
   const extension = extname(filePath).toLowerCase();
-  // ponytail: Windows .cmd shims need a shell, which would expose the file path to it; project
-  // formatters are skipped there until they are launched through node directly.
-  const bin = (name: string) => join(projectPath, "node_modules", ".bin", name);
+  // On Windows npm installs the project's tools as .cmd shims, which launch.ts runs without a shell.
+  const bin = (name: string) =>
+    join(projectPath, "node_modules", ".bin", process.platform === "win32" ? `${name}.cmd` : name);
   if (PRETTIER_EXTENSIONS.has(extension)) {
     if (await exists(bin("biome"))) {
       return { name: "Biome", command: bin("biome"), args: ["format", "--write", filePath] };
@@ -54,7 +55,8 @@ export async function formatFile(
   if (!formatter) return undefined;
   const before = await readFile(filePath, "utf8").catch(() => undefined);
   const ok = await new Promise<boolean>((resolve) => {
-    execFile(
+    // Starting throws for a Windows batch file that isn't an npm shim, which counts as failing.
+    execFileResolved(
       formatter.command,
       formatter.args,
       {
@@ -65,7 +67,7 @@ export async function formatFile(
       },
       (error) => resolve(!error),
     );
-  });
+  }).catch(() => false);
   if (!ok) return undefined;
   const after = await readFile(filePath, "utf8").catch(() => undefined);
   return after !== before ? formatter.name : undefined;
