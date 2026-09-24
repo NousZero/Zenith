@@ -407,3 +407,32 @@ only blue in the window; it now follows the theme's primary colour (`accent-prim
 Also fixed: the component test's `window.zenith` stub had no `voice.status`, so the dictation hook
 added in the same period made `tests/component/transcript.test.tsx` fail. Stub added; the suite is
 green again (150 unit, 101 integration, 2 component).
+
+## A built-in browser (2026-09-24)
+
+**Browser** sits in the left rail below Files: back, forward, reload or stop, an address field and
+"Open in your browser", over a real web page. Text that looks like an address loads (with
+`https://` added when there is no scheme); anything else searches DuckDuckGo (`addressToUrl` in
+`shared/browser-address.ts`).
+
+- **One native view, not `<webview>`.** `main/browser-view.ts` keeps a single `WebContentsView` on
+  the main window's `contentView`, made on the first navigation. The window sends the rectangle of
+  its page area (`ResizeObserver` plus window resize, whole pixels), and the view sits exactly over
+  it. It is separate from the agent's pages in `main/browser.ts`.
+- **Kept apart from Zenith:** its own `persist:zenith-browser` session, so sites never share
+  cookies or storage with the app; sandboxed, context isolation on, no Node, no preload, no
+  `<webview>`. Only http, https and `about:blank` load — from the address field, links, redirects
+  and new windows alike. A link that opens a new window opens in the same view. Every permission
+  (camera, microphone, location, notifications, MIDI, links into other apps…) is refused, and a
+  download always asks where to save.
+- **Native views draw over everything,** so the view is hidden when another page is open, and while
+  any Radix dialog, popover, menu or select list is open (a `MutationObserver` watches for
+  `[data-state=open]` with those roles). Leaving the page only hides the view, so the page and its
+  history are there on the way back. It is destroyed when the window closes.
+- **Verified:** unit tests for the address rules and the scheme allow-list; an end-to-end test
+  serves two pages from a local `http.createServer`, loads both from the address field, checks the
+  title in the breadcrumbs and the URL in the field, walks back and forward, leaves and returns,
+  and has `file:` refused. In the running app, example.com loaded exactly under the toolbar, the
+  History dialog drew over an empty area with the page hidden, and the page followed a window
+  resize and the bottom panel. From inside the page, location, microphone and notifications were
+  denied, `window.open` loaded in the same view, and `window.zenith` and `require` were undefined.

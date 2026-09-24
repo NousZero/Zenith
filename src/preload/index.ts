@@ -8,6 +8,7 @@ import type {
   ChatChunk,
   BoardCard,
   BoardStatus,
+  BrowserViewState,
   GateResult,
   Goal,
   GoalInput,
@@ -200,6 +201,24 @@ const zenithApi: ZenithApi = {
   },
   screen: {
     capture: (): Promise<ImageAttachment> => ipcRenderer.invoke("screen:capture"),
+  },
+  browser: {
+    navigate: (urlOrQuery: string): Promise<void> =>
+      ipcRenderer.invoke("browser:navigate", urlOrQuery),
+    back: (): Promise<void> => ipcRenderer.invoke("browser:back"),
+    forward: (): Promise<void> => ipcRenderer.invoke("browser:forward"),
+    reload: (): Promise<void> => ipcRenderer.invoke("browser:reload"),
+    stop: (): Promise<void> => ipcRenderer.invoke("browser:stop"),
+    setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<void> =>
+      ipcRenderer.invoke("browser:setBounds", bounds),
+    setVisible: (visible: boolean): Promise<void> =>
+      ipcRenderer.invoke("browser:setVisible", visible),
+    openExternal: (): Promise<void> => ipcRenderer.invoke("browser:openExternal"),
+    onState(listener: (state: BrowserViewState) => void): () => void {
+      const handler = (_event: unknown, state: BrowserViewState) => listener(state);
+      ipcRenderer.on("browser:state", handler);
+      return () => ipcRenderer.removeListener("browser:state", handler);
+    },
   },
   goals: {
     list: (): Promise<Goal[]> => ipcRenderer.invoke("goals:list"),
