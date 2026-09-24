@@ -81,9 +81,11 @@ describe("detectToolConnections", () => {
       }),
     );
     expect(byId(statuses, "claude-code").state).toBe("sign-in-required");
+    // No sign-in found on disk still counts as ready: newer Gemini releases keep it elsewhere.
     expect(byId(statuses, "gemini-cli")).toMatchObject({
-      state: "sign-in-required",
-      detail: "Gemini CLI 0.44.1 · run `gemini` in a terminal to sign in",
+      state: "ready",
+      detail:
+        "Gemini CLI 0.44.1 · sign-in is checked when you send (run `gemini` in a terminal if it asks)",
     });
     expect(byId(statuses, "copilot-cli")).toMatchObject({ state: "not-installed" });
     expect(byId(statuses, "lmstudio").state).toBe("not-running");

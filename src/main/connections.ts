@@ -144,13 +144,17 @@ async function detectGeminiCli(probes: ConnectionProbes): Promise<ConnectionStat
     geminiSignedIn(probes),
   ]);
   const name = withVersion("Gemini CLI", versionOf(version.stdout));
-  return signedIn
-    ? { ...base, state: "ready", detail: `${name} · signed in` }
-    : {
-        ...base,
-        state: "sign-in-required",
-        detail: `${name} · run \`gemini\` in a terminal to sign in`,
-      };
+  // Gemini keeps moving its sign-in (newer releases use the system keychain), so a missing file
+  // doesn't mean signed out: the real smoke run found a working Gemini marked as needing sign-in,
+  // which hid it from comparisons. Like Copilot, an installed Gemini counts as ready, and a real
+  // sign-in problem surfaces as Gemini's own error when you send.
+  return {
+    ...base,
+    state: "ready",
+    detail: signedIn
+      ? `${name} · signed in`
+      : `${name} · sign-in is checked when you send (run \`gemini\` in a terminal if it asks)`,
+  };
 }
 
 async function detectCopilotCli(probes: ConnectionProbes): Promise<ConnectionStatus> {
