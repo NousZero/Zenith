@@ -113,6 +113,9 @@ export interface ChatChunk {
   snapshot?: boolean;
   // The model's context window in tokens, when the tool reports it.
   contextWindow?: number;
+  // Why a running agent has gone quiet, from its own warnings (a quota retry, say), so the user
+  // sees more than "thinking…". Cleared by the next sign of progress.
+  notice?: string;
 }
 
 export type ConnectionKind = "cli" | "agent" | "local" | "api-key";

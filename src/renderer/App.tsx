@@ -186,6 +186,7 @@ export function App() {
     setSession,
     streamingPaneIds,
     agentTurns,
+    notices,
     rollbackTurn,
     rollbackFile,
     compactingPaneIds,
@@ -458,7 +459,7 @@ export function App() {
     pane && streamingPaneIds.has(pane.id)
       ? permissions.length > 0
         ? "waiting for your approval"
-        : (runningActivity?.title ?? "thinking…")
+        : (runningActivity?.title ?? notices[pane.id] ?? "thinking…")
       : null;
 
   // A prompt written during a run waits its turn instead of being refused.

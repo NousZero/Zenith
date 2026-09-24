@@ -131,6 +131,8 @@ export function useHarness(
   );
   const [streamingPaneIds, setStreamingPaneIds] = useState<ReadonlySet<string>>(new Set());
   const [agentTurns, setAgentTurns] = useState<Record<string, AgentTurn>>({});
+  // Why a pane's running agent has gone quiet, until it shows progress again.
+  const [notices, setNotices] = useState<Record<string, string>>({});
   // Agent approvals waiting for the user, oldest first.
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
 
@@ -200,6 +202,16 @@ export function useHarness(
       const { assistantId, text, usage: reported } = state;
       if (chunk.done) endStream(paneId);
       const { activity, todos, snapshot } = chunk;
+      if (chunk.notice) {
+        const notice = chunk.notice;
+        setNotices((current) => ({ ...current, [paneId]: notice }));
+      } else if (chunk.delta || activity || todos || chunk.done) {
+        setNotices((current) =>
+          paneId in current
+            ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== paneId))
+            : current,
+        );
+      }
       if (chunk.memoryChanged) memoryChanged.current?.();
       if (activity || todos || snapshot) {
         setAgentTurns((current) => {
@@ -690,6 +702,7 @@ export function useHarness(
     setSession,
     streamingPaneIds,
     agentTurns,
+    notices,
     rollbackTurn,
     rollbackFile,
     compactingPaneIds,

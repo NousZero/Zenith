@@ -63,6 +63,11 @@ export class AcpConnection {
     );
   }
 
+  // What the agent last warned about on stderr, for showing why a reply has gone quiet.
+  get notice(): string | undefined {
+    return stallNotice(this.stderr);
+  }
+
   get closed(): boolean {
     return this.exitError !== undefined;
   }
@@ -153,6 +158,28 @@ export class AcpConnection {
         }),
     );
   }
+}
+
+// Words in an agent's log line that explain a stall worth showing the user.
+const STALL_SIGNAL =
+  /\b(?:warn(?:ing)?|error|retry(?:ing)?|quota|rate.?limit|429|unauthori[sz]ed|forbidden|timed? ?out|exhausted)\b/i;
+
+// The latest stderr line that explains a stall, without its timestamp, level, or logger prefix,
+// or undefined when the agent has said nothing worth showing.
+export function stallNotice(stderr: string): string | undefined {
+  const line = stderr
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter((entry) => STALL_SIGNAL.test(entry))
+    .at(-1);
+  if (!line) return undefined;
+  const cleaned = line
+    .replace(/^\d{4}-\d{2}-\d{2}[ T][\d:.,]+(?:Z|[+-]\d{2}:?\d{2})?\s*/, "")
+    .replace(/^\[(?:DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL)\]\s*/i, "")
+    .replace(/^[\w.-]+:\s+/, "")
+    .replace(/^[⚠!]\s*/, "")
+    .trim();
+  return cleaned.length > 200 ? `${cleaned.slice(0, 199)}…` : cleaned || undefined;
 }
 
 function lastLine(text: string): string | undefined {

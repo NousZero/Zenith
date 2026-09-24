@@ -16,6 +16,9 @@ import { asRecord, DEFAULT_MODEL_ID } from "../cli/cli-adapter";
 import { assertSafeModelId, buildCliPrompt, withSystemPreamble } from "../cli/transcript";
 import { AcpConnection } from "./connection";
 
+// How long an agent may say nothing before its latest warning is shown.
+const STALL_NOTICE_MS = 15_000;
+
 const PROTOCOL_VERSION = 1;
 
 export interface AcpAgentSpec {
@@ -327,13 +330,27 @@ export function createAcpAdapter(
         });
 
       let reply = "";
+      // An agent waiting on its own model provider (a quota retry, say) sends nothing over ACP;
+      // after a quiet spell, its latest warning on stderr is passed on so the user sees why.
+      let shownNotice: string | undefined;
       try {
         while (true) {
           const event = queue.shift();
           if (!event) {
             if (finished) break;
-            await new Promise<void>((resolve) => (wake = resolve));
+            const woke = await new Promise<boolean>((resolve) => {
+              const timer = setTimeout(() => resolve(false), STALL_NOTICE_MS);
+              wake = () => {
+                clearTimeout(timer);
+                resolve(true);
+              };
+            });
             wake = undefined;
+            const notice = woke ? undefined : conn.notice;
+            if (notice && notice !== shownNotice) {
+              shownNotice = notice;
+              yield { delta: "", done: false, notice };
+            }
             continue;
           }
           if ("delta" in event) {
