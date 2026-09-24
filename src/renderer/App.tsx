@@ -277,7 +277,8 @@ export function App() {
       if (event.key.toLowerCase() === "p") {
         event.preventDefault();
         setPaletteOpen(true);
-      } else if (event.key.toLowerCase() === "k") {
+      } else if (event.key.toLowerCase() === "k" && !event.shiftKey) {
+        // Cmd/Ctrl+Shift+K is the review bar's Keep.
         event.preventDefault();
         setHistory({ tab: "search", query: "" });
       }
@@ -1025,6 +1026,7 @@ export function App() {
           <ReviewBar
             key={paneTurn.turnId}
             turn={paneTurn}
+            projectPath={pane.projectPath}
             onRollback={() => rollbackTurn(pane.id)}
             onRollbackFile={(path) => rollbackFile(pane.id, path)}
             onKeep={() => setKeptTurnIds((kept) => new Set(kept).add(paneTurn.turnId))}

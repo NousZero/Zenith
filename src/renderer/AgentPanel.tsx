@@ -20,7 +20,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { gateFixPrompt } from "../shared/gates";
 import type { AgentActivity, AgentTodo, GateResult, ReviewResult } from "../shared/types";
@@ -374,15 +374,36 @@ export function AgentPanel(props: {
 }
 
 // One file chip in the review bar, with its own hover undo control and two-step confirm.
-function FileChip(props: { name: string; onUndo(): Promise<boolean> }) {
+function FileChip(props: {
+  name: string;
+  expanded: boolean;
+  controls: string;
+  onToggle(): void;
+  onUndo(): Promise<boolean>;
+}) {
   const [confirming, setConfirming] = useState(false);
   const label = props.name.split(/[\\/]/).at(-1);
   return (
     <span
       title={props.name}
-      className="group/chip flex max-w-40 items-center gap-0.5 border border-border bg-background/60 py-px pl-1.5 pr-0.5 font-mono text-[10px] text-muted-foreground rounded-md"
+      className={cn(
+        "group/chip flex max-w-40 items-center gap-0.5 border border-border bg-background/60 py-px pl-1.5 pr-0.5 font-mono text-[10px] text-muted-foreground rounded-md",
+        props.expanded && "border-primary/50",
+      )}
     >
-      <span className="truncate">{label}</span>
+      <button
+        type="button"
+        aria-label={props.name}
+        aria-expanded={props.expanded}
+        aria-controls={props.controls}
+        className={cn(
+          "min-w-0 truncate hover:text-foreground",
+          props.expanded && "text-foreground",
+        )}
+        onClick={props.onToggle}
+      >
+        {label}
+      </button>
       <Button
         size="icon-xs"
         variant="ghost"
@@ -408,6 +429,92 @@ function FileChip(props: { name: string; onUndo(): Promise<boolean> }) {
   );
 }
 
+// A diff this long is past reading inline; See diff opens the whole file in the Git tab.
+const MAX_INLINE_DIFF_LINES = 400;
+const isMac = navigator.userAgent.includes("Mac");
+// Cmd/Ctrl+Enter sends from the composer and Cmd/Ctrl+K opens history search, so the review
+// shortcuts add Shift; neither combination is bound elsewhere in the app or Electron's menu.
+const KEEP_SHORTCUT = isMac ? "⌘⇧K" : "Ctrl+Shift+K";
+const UNDO_ALL_SHORTCUT = isMac ? "⌘⇧⌫" : "Ctrl+Shift+Backspace";
+
+type InlineDiffResult = { diff: string } | { note: string };
+
+// Reads the file's diff against the last commit as it is on disk now, so the inline view shows
+// what Keep would keep, including edits made after the reply.
+async function loadInlineDiff(
+  projectPath: string | null | undefined,
+  name: string,
+): Promise<InlineDiffResult> {
+  if (!projectPath) return { note: "Choose a project folder to see this file's diff." };
+  const status = await window.zenith.workspace.gitStatus(projectPath);
+  if (!status.isRepository) {
+    return { note: "This folder is not a Git repository, so there is no diff to show." };
+  }
+  // Agents may name files by absolute path, while Git status lists them from the project root.
+  const path = (name.startsWith(projectPath) ? name.slice(projectPath.length) : name)
+    .replace(/^[\\/]+/, "")
+    .replaceAll("\\", "/");
+  const file = status.files.find((entry) => entry.path === path);
+  const diff = file ? await window.zenith.workspace.gitDiff(projectPath, path, file.state) : "";
+  return diff.trim() ? { diff } : { note: "No changes against the last commit." };
+}
+
+function InlineDiff(props: { id: string; name: string; projectPath: string | null | undefined }) {
+  const [result, setResult] = useState<InlineDiffResult | undefined>();
+  useEffect(() => {
+    let cancelled = false;
+    loadInlineDiff(props.projectPath, props.name).then(
+      (next) => {
+        if (!cancelled) setResult(next);
+      },
+      (error: unknown) => {
+        if (!cancelled) {
+          setResult({
+            note: `Could not read the diff: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectPath, props.name]);
+
+  const lines = result && "diff" in result ? result.diff.split("\n") : [];
+  const truncated = lines.length > MAX_INLINE_DIFF_LINES;
+  return (
+    <div
+      id={props.id}
+      role="region"
+      aria-label={`Diff of ${props.name}`}
+      className="basis-full border-t border-primary/20 pt-2"
+    >
+      {result === undefined || "note" in result ? (
+        <p className="text-muted-foreground">{result?.note ?? "Reading the diff…"}</p>
+      ) : (
+        <>
+          {truncated && (
+            <p className="mb-1.5 text-muted-foreground">
+              Showing the first {MAX_INLINE_DIFF_LINES} of {lines.length} lines. See diff shows the
+              rest.
+            </p>
+          )}
+          <DiffView
+            diff={truncated ? lines.slice(0, MAX_INLINE_DIFF_LINES).join("\n") : result.diff}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function isTextField(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.matches("input, textarea, select"))
+  );
+}
+
 // What a finished reply changed, pinned above the composer until kept or undone, as in Cursor's
 // review bar. Undo all is all-or-nothing; each chip can also be undone on its own.
 export function ReviewBar(props: {
@@ -416,18 +523,43 @@ export function ReviewBar(props: {
   onRollbackFile(path: string): Promise<boolean>;
   onKeep(): void;
   onShowDiff(): void;
+  projectPath?: string | null;
 }) {
-  const { turn } = props;
+  const { turn, onKeep } = props;
   const [confirming, setConfirming] = useState(false);
   const [undoneFiles, setUndoneFiles] = useState<ReadonlySet<string>>(new Set());
+  const [openFile, setOpenFile] = useState<string | null>(null);
+  const diffId = useId();
   const files = turn.activities
     .filter((activity) => activity.checkpoint)
     .map((activity) => activity.title.replace(/^\S+\s+/, ""));
   const names = [...new Set(files)].filter((name) => !undoneFiles.has(name));
   // With a snapshot, any action may have changed files (commands included). Once every named
   // file has been undone one at a time, the bar disappears just as it would after Undo all.
-  if (names.length === 0 && (files.length > 0 || !(turn.snapshot && turn.activities.length > 0)))
-    return null;
+  const hidden =
+    names.length === 0 && (files.length > 0 || !(turn.snapshot && turn.activities.length > 0));
+
+  // Undo all only asks for confirmation here, and not from a text field, where the same keys
+  // can delete text.
+  useEffect(() => {
+    if (hidden) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(isMac ? event.metaKey : event.ctrlKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        onKeep();
+      } else if (event.key === "Backspace" && !isTextField(event.target)) {
+        event.preventDefault();
+        setConfirming(true);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hidden, onKeep]);
+
+  if (hidden) return null;
+  // A file undone on its own closes its diff.
+  const shownFile = openFile !== null && names.includes(openFile) ? openFile : null;
   const summary =
     names.length > 0
       ? `${names.length} ${names.length === 1 ? "file" : "files"} changed`
@@ -437,7 +569,7 @@ export function ReviewBar(props: {
     <div
       role="region"
       aria-label="Review changes"
-      className="mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-[calc(48rem-2rem)] items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-3 py-2 text-xs"
+      className="mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-[calc(48rem-2rem)] flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-3 py-2 text-xs"
     >
       <FileDiff className="size-3.5 shrink-0 text-primary" aria-hidden />
       {confirming ? (
@@ -454,6 +586,9 @@ export function ReviewBar(props: {
               <FileChip
                 key={name}
                 name={name}
+                expanded={name === shownFile}
+                controls={diffId}
+                onToggle={() => setOpenFile(name === shownFile ? null : name)}
                 onUndo={async () => {
                   const ok = await props.onRollbackFile(name);
                   if (ok) setUndoneFiles((current) => new Set(current).add(name));
@@ -477,6 +612,8 @@ export function ReviewBar(props: {
           <Button
             size="xs"
             variant="destructive"
+            // Focus lands here so a keyboard user confirms Undo all with Enter, or tabs away.
+            autoFocus
             onClick={() => {
               setConfirming(false);
               void props.onRollback();
@@ -491,15 +628,23 @@ export function ReviewBar(props: {
           <Button size="xs" variant="ghost" onClick={props.onShowDiff}>
             See diff
           </Button>
-          <Button size="xs" variant="outline" onClick={() => setConfirming(true)}>
+          <Button
+            size="xs"
+            variant="outline"
+            title={`Undo all (${UNDO_ALL_SHORTCUT})`}
+            onClick={() => setConfirming(true)}
+          >
             <History />
             Undo all
           </Button>
-          <Button size="xs" onClick={props.onKeep}>
+          <Button size="xs" title={`Keep (${KEEP_SHORTCUT})`} onClick={onKeep}>
             <Check />
             Keep
           </Button>
         </>
+      )}
+      {shownFile !== null && (
+        <InlineDiff key={shownFile} id={diffId} name={shownFile} projectPath={props.projectPath} />
       )}
     </div>
   );
