@@ -162,7 +162,7 @@ export function PermissionCard(props: {
           <Button
             size="xs"
             variant="outline"
-            title={`Adds "${rule}" to your rules in Settings → Guardrails.`}
+            title={`Adds "${rule}" to your rules in Settings → Safety.`}
             onClick={() => props.onAlwaysDeny?.(rule)}
           >
             <Ban />

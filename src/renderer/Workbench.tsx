@@ -585,7 +585,7 @@ export function RunInspector(props: {
       <div className="mx-4 mb-4 mt-4 border-t border-border pt-3">
         <p className="eyebrow text-muted-foreground">Local policy</p>
         <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-          Edits, commands, and MCP tools ask first unless Settings → Guardrails allows them. Undo
+          Edits, commands, and MCP tools ask first unless Settings → Safety allows them. Undo
           restores the project folder.
         </p>
       </div>

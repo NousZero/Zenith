@@ -1,5 +1,5 @@
 // Extras are features outside the core loop (pick a folder, ask, watch, review, keep or undo).
-// Settings > Extras turns each on or off; every rail item, composer control, menu entry, and
+// Settings > General > Extras turns each on or off; every rail item, composer control, menu entry, and
 // slash command that belongs to one reads this file instead of deciding for itself.
 
 import { useEffect, useState } from "react";

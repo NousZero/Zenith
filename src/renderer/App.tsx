@@ -107,17 +107,40 @@ function folderLabel(path: string): string {
 }
 
 const SETTINGS_TABS = [
-  { id: "appearance", label: "Appearance" },
-  { id: "providers", label: "Providers" },
+  { id: "general", label: "General" },
+  { id: "assistants", label: "Assistants" },
+  { id: "agent-behaviour", label: "Agent behaviour" },
+  { id: "safety", label: "Safety" },
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+
+// The library and editor sections gathered under the Agent behaviour tab.
+// Each is a long list with its own editor, so they get a sub-nav rather
+// than stacking on one page.
+const AGENT_BEHAVIOUR_SECTIONS = [
   { id: "soul", label: "Soul" },
   { id: "role", label: "Role" },
   { id: "agents", label: "Agents" },
   { id: "skills", label: "Skills" },
   { id: "commands", label: "Commands" },
-  { id: "plugins", label: "Guardrails" },
-  { id: "extras", label: "Extras" },
 ] as const;
-type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+type AgentBehaviourSection = (typeof AGENT_BEHAVIOUR_SECTIONS)[number]["id"];
+
+// Every place that used to call openSettings("<old tab id>") keeps working:
+// each old id still names a single destination, now expressed as a tab plus,
+// for the merged Agent behaviour tab, the sub-section to land on.
+const SETTINGS_DESTINATIONS = {
+  appearance: { tab: "general" },
+  extras: { tab: "general" },
+  providers: { tab: "assistants" },
+  soul: { tab: "agent-behaviour", section: "soul" },
+  role: { tab: "agent-behaviour", section: "role" },
+  agents: { tab: "agent-behaviour", section: "agents" },
+  skills: { tab: "agent-behaviour", section: "skills" },
+  commands: { tab: "agent-behaviour", section: "commands" },
+  plugins: { tab: "safety" },
+} as const satisfies Record<string, { tab: SettingsTab; section?: AgentBehaviourSection }>;
+type SettingsDestination = keyof typeof SETTINGS_DESTINATIONS;
 const UNTITLED_SESSION = "Untitled session";
 // Radix Select cannot use "" as an item value.
 const NO_PERSONALITY = "none";
@@ -138,7 +161,8 @@ export function App() {
   const autoConfiguredSessionId = useRef<string | undefined>(undefined);
   const [restored, setRestored] = useState(false);
   const [activity, setActivity] = useState<ActivityId>("workspace");
-  const [settingsTab, setSettingsTab] = useState<SettingsTab>("appearance");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [agentSection, setAgentSection] = useState<AgentBehaviourSection>("soul");
   const [dockOpen, setDockOpen] = useState(false);
   const [composerControls, setComposerControls] = useState<HTMLElement | null>(null);
   const [dockShowTab, setDockShowTab] = useState<{ tab: DockTab; at: number }>();
@@ -188,7 +212,8 @@ export function App() {
   const [rememberText, setRememberText] = useState<string | null>(null);
   const [cliOutput, setCliOutput] = useState<CliOutput | null>(null);
   const [contextPaneId, setContextPaneId] = useState<string | null>(null);
-  // A skill drafted from a conversation, opened in Settings → Skills; the number remounts the editor.
+  // A skill drafted from a conversation, opened in Settings → Agent behaviour → Skills; the number
+  // remounts the editor.
   const [skillDraft, setSkillDraft] = useState<{ draft: LibraryDraft; version: number } | null>(
     null,
   );
@@ -471,8 +496,10 @@ export function App() {
       modelId: item.modelId,
     }));
 
-  const openSettings = (tab: SettingsTab) => {
-    setSettingsTab(tab);
+  const openSettings = (destination: SettingsDestination) => {
+    const target = SETTINGS_DESTINATIONS[destination];
+    setSettingsTab(target.tab);
+    if ("section" in target) setAgentSection(target.section);
     setActivity("settings");
   };
 
@@ -726,7 +753,7 @@ export function App() {
       : []),
     {
       name: "settings",
-      title: "Settings: providers, themes, soul, library, guardrails",
+      title: "Settings: general, assistants, agent behaviour, safety",
       icon: Settings,
       run: () => openSettings("appearance"),
     },
@@ -778,22 +805,25 @@ export function App() {
     clearAgentCache();
     setLibraryVersion((value) => value + 1);
   };
-  const libraryKinds: Partial<Record<SettingsTab, LibraryItem["kind"]>> = {
+  const libraryKinds: Partial<Record<AgentBehaviourSection, LibraryItem["kind"]>> = {
     agents: "agent",
     skills: "skill",
     commands: "command",
   };
-  const libraryKind = libraryKinds[settingsTab];
+  const libraryKind = settingsTab === "agent-behaviour" ? libraryKinds[agentSection] : undefined;
   const settingsDescriptions: Record<SettingsTab, string> = {
-    appearance: "How Zenith looks.",
-    providers: "AI tools on this computer and API providers with their own address and key.",
+    general: "How Zenith looks, plus features outside the core loop.",
+    assistants: "AI tools on this computer and API providers with their own address and key.",
+    "agent-behaviour":
+      "Who every model is, the personality it follows, and the agents, skills, and commands it can use.",
+    safety: "How much agents may do on their own, the tools they can reach, and what they did.",
+  };
+  const agentSectionDescriptions: Record<AgentBehaviourSection, string> = {
     soul: "Who every model is and what it knows about you, sent as the system prompt.",
     role: "The personality this session follows, added after the soul and profile.",
     agents: "Instructions and tool lists a pane can follow. Choose one from the pane's menu.",
     skills: "Instructions you run with /name in the composer.",
     commands: "Prompt templates you run with /name; $ARGUMENTS is replaced with what you type.",
-    plugins: "How much agents may do on their own, and the tools they can reach.",
-    extras: "Features outside the core loop: goals, bots, scheduling, dictation, and more.",
   };
 
   const sessionTitle = (
@@ -995,7 +1025,11 @@ export function App() {
       <PageHeader
         eyebrow="Profiles and connections"
         title="Settings"
-        description={settingsDescriptions[settingsTab]}
+        description={
+          settingsTab === "agent-behaviour"
+            ? agentSectionDescriptions[agentSection]
+            : settingsDescriptions[settingsTab]
+        }
       />
       <div
         role="tablist"
@@ -1020,6 +1054,31 @@ export function App() {
           </button>
         ))}
       </div>
+      {settingsTab === "agent-behaviour" && (
+        <div
+          role="tablist"
+          aria-label="Agent behaviour sections"
+          className="flex shrink-0 gap-1 overflow-x-auto bg-card px-4 py-2"
+        >
+          {AGENT_BEHAVIOUR_SECTIONS.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              role="tab"
+              aria-selected={agentSection === section.id}
+              onClick={() => setAgentSection(section.id)}
+              className={cn(
+                "shrink-0 cursor-pointer rounded-full border px-2.5 py-1 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                agentSection === section.id
+                  ? "border-primary/60 bg-primary/[0.06] text-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+      )}
       {libraryKind ? (
         <div className="flex min-h-0 flex-1 flex-col p-5">
           <LibraryBrowser
@@ -1035,8 +1094,20 @@ export function App() {
         </div>
       ) : (
         <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
-          {settingsTab === "appearance" && narrow(<AppearanceSection />)}
-          {settingsTab === "providers" &&
+          {settingsTab === "general" &&
+            narrow(
+              <>
+                <AppearanceSection />
+                <ExtrasSection
+                  extras={extras}
+                  onToggle={setExtra}
+                  onOpenBots={() => setBotsOpen(true)}
+                  onOpenSchedule={() => setScheduleOpen(true)}
+                  onOpenInsights={() => setHistory({ tab: "insights", query: "" })}
+                />
+              </>,
+            )}
+          {settingsTab === "assistants" &&
             narrow(
               <>
                 <ProvidersSection onChanged={() => setCredentialsVersion((value) => value + 1)} />
@@ -1047,7 +1118,8 @@ export function App() {
                 />
               </>,
             )}
-          {settingsTab === "soul" &&
+          {settingsTab === "agent-behaviour" &&
+            agentSection === "soul" &&
             narrow(
               <>
                 <PersonaFileEditor
@@ -1068,10 +1140,10 @@ export function App() {
                 />
               </>,
             )}
-          {settingsTab === "role" && (
+          {settingsTab === "agent-behaviour" && agentSection === "role" && (
             <RolePage personalityId={session.personalityId} onChange={setPersonality} />
           )}
-          {settingsTab === "plugins" &&
+          {settingsTab === "safety" &&
             narrow(
               <>
                 <PermissionsSection onChanged={() => setGuardVersion((value) => value + 1)} />
@@ -1079,16 +1151,6 @@ export function App() {
                 <McpSection />
                 <AuditSection />
               </>,
-            )}
-          {settingsTab === "extras" &&
-            narrow(
-              <ExtrasSection
-                extras={extras}
-                onToggle={setExtra}
-                onOpenBots={() => setBotsOpen(true)}
-                onOpenSchedule={() => setScheduleOpen(true)}
-                onOpenInsights={() => setHistory({ tab: "insights", query: "" })}
-              />,
             )}
         </div>
       )}
