@@ -51,10 +51,10 @@ function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
-export type ActivityId = "workspace" | "files" | "goals" | "settings";
+export type ActivityId = "workspace" | "files" | "goals";
 
 export function TopBar(props: {
-  // Where the user is, such as ["Settings", "Providers"].
+  // Where the user is, such as ["Files", "zenith"].
   crumbs: string[];
   streaming: boolean;
   dockOpen: boolean;
@@ -164,6 +164,7 @@ export function ActivityRail(props: {
   onOpenHistory(): void;
   onOpenSchedule(): void;
   onOpenBots(): void;
+  onOpenSettings(): void;
   extras: Record<ExtraId, boolean>;
 }) {
   const [summaries, setSummaries] = useState<SessionSummary[]>([]);
@@ -332,14 +333,12 @@ export function ActivityRail(props: {
             Bots
           </button>
         )}
-        <button
-          type="button"
-          aria-current={props.active === "settings" ? "page" : undefined}
-          onClick={() => props.onSelect("settings")}
-          className={railButton(props.active === "settings")}
-        >
+        <button type="button" className={railButton(false)} onClick={props.onOpenSettings}>
           <Settings className="size-4" aria-hidden />
-          Settings
+          <span className="flex-1">Settings</span>
+          <kbd className="font-mono text-[10px]">
+            {navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl"} ,
+          </kbd>
         </button>
       </div>
     </nav>
