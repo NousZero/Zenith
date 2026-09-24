@@ -1,7 +1,9 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { access } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
+
+import { spawnResolved } from "../cli/launch";
 
 const START_TIMEOUT_MS = 20_000;
 const FIRST_DIAGNOSTICS_TIMEOUT_MS = 15_000;
@@ -70,7 +72,7 @@ function startClient(
   root: string,
   env: NodeJS.ProcessEnv,
 ): Client {
-  const child: ChildProcessWithoutNullStreams = spawn(command, spec.args, {
+  const child: ChildProcessWithoutNullStreams = spawnResolved(command, spec.args, {
     cwd: root,
     env,
     windowsHide: true,
@@ -271,14 +273,18 @@ export function createLanguageServers(
     let client = clients.get(key);
     if (!client) {
       client = (async () => {
-        const local = join(root, "node_modules", ".bin", spec.command);
+        // On Windows npm installs the project's tools as .cmd shims, which launch.ts runs.
+        const bin = process.platform === "win32" ? `${spec.command}.cmd` : spec.command;
+        const local = join(root, "node_modules", ".bin", bin);
         const command = spec.projectBin && (await exists(local)) ? local : spec.command;
-        const started = startClient(spec, command, root, env());
+        let started: Client | undefined;
         try {
+          // Starting throws for a Windows batch file that isn't an npm shim.
+          started = startClient(spec, command, root, env());
           await started.ready;
           return started;
         } catch {
-          started.dispose();
+          started?.dispose();
           return undefined;
         }
       })();

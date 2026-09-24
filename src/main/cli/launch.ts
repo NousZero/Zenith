@@ -25,8 +25,12 @@ import { delimiter, dirname, extname, join, resolve } from "node:path";
 // The script an npm .cmd shim runs, relative to the shim's folder, or undefined when the text is
 // not an npm shim.
 export function npmShimScript(text: string): string | undefined {
-  const match = /"%~?dp0%?\\?([^"%]+\.(?:c|m)?js)"\s+%\*/i.exec(text);
-  if (match?.[1]) return match[1].replace(/\\/g, "/");
+  const script = /"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(text)?.[1];
+  // A script without a .js extension, such as TypeScript's tsc or Biome's biome, is run with node
+  // only when the shim itself runs node.
+  if (script && (/\.(?:c|m)?js$/i.test(script) || /^\s*SET "_prog=node"\s*$/im.test(text))) {
+    return script.replace(/\\/g, "/");
+  }
   // ponytail: a newer npm installed globally over Node's own, which npx.cmd would prefer after
   // asking npm-prefix.js, is ignored and Node's bundled npm runs; ask npm-prefix.js if that matters.
   const tool = /^"%NODE_EXE%"\s+"%(NP[MX])_CLI_JS%"\s+%\*\s*$/im.exec(text)?.[1]?.toLowerCase();

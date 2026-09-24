@@ -67,6 +67,15 @@ describe("launching npm .cmd shims without a shell", () => {
     expect(npmShimScript("@echo off\r\ncall something-else.exe %*")).toBeUndefined();
   });
 
+  it("runs a node script without a .js extension only when the shim runs node", () => {
+    const tsc = NPM_SHIM.replace(
+      "node_modules\\@google\\gemini-cli\\dist\\index.js",
+      "..\\typescript\\bin\\tsc",
+    );
+    expect(npmShimScript(tsc)).toBe("../typescript/bin/tsc");
+    expect(npmShimScript(tsc.replace('SET "_prog=node"', 'SET "_prog=sh"'))).toBeUndefined();
+  });
+
   it("finds the script Node's own npx.cmd and npm.cmd run, and nothing else in that form", () => {
     expect(npmShimScript(nodeShim("npx"))).toBe("node_modules/npm/bin/npx-cli.js");
     expect(npmShimScript(nodeShim("npm"))).toBe("node_modules/npm/bin/npm-cli.js");

@@ -51,7 +51,7 @@ describe("formatters, language servers, and MCP tools", () => {
       {
         name: "fake-lsp",
         languages: { ".ts": "typescript" },
-        command: join(fixtures, "fake-lsp-server.mjs"),
+        command: launchable(join(fixtures, "fake-lsp-server.mjs")),
         args: [],
       },
     ]);
@@ -76,7 +76,7 @@ describe("formatters, language servers, and MCP tools", () => {
         {
           name: "pull-lsp",
           languages: { ".ts": "typescript" },
-          command: join(fixtures, "fake-lsp-server.mjs"),
+          command: launchable(join(fixtures, "fake-lsp-server.mjs")),
           args: ["--pull"],
         },
       ]);
