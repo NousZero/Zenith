@@ -15,7 +15,8 @@ import type {
 } from "../../shared/types";
 import { asRecord, DEFAULT_MODEL_ID, lastNonEmptyLine, parseJsonLine } from "../cli/cli-adapter";
 import { stallNotice, withStallNotices } from "../cli/stall-notice";
-import { assertSafeModelId, buildCliPrompt } from "../cli/transcript";
+import { resumeOrReplay, type AgentSessions } from "../cli/agent-sessions";
+import { assertSafeModelId, buildCliPrompt, latestPrompt, type CliPrompt } from "../cli/transcript";
 import { parseClaudeCodeLine } from "../providers/claude-code";
 import { anthropicContent } from "../providers/content";
 
@@ -68,6 +69,8 @@ export interface ClaudeAgentDeps {
   sandboxSettings?(): Promise<string | undefined>;
   // How long Claude Code may be silent before its latest warning is shown; shortened in tests.
   stallNoticeMs?: number;
+  // Each pane's Claude Code session, so an unchanged conversation continues it.
+  sessions?: AgentSessions;
 }
 
 function text(value: unknown): string {
@@ -231,6 +234,8 @@ export async function permissionPrompt(
 
 // Runs Claude Code as an agent in a project folder for one reply. Claude Code uses its own
 // tools; every action it can't take freely comes to Zenith as a can_use_tool control request.
+// When the pane is unchanged since its last turn, the reply continues that turn's Claude Code
+// session and sends only the new message.
 export async function* runClaudeAgent(
   original: SendMessageRequest & { projectPath: string },
   deps: ClaudeAgentDeps,
@@ -239,11 +244,55 @@ export async function* runClaudeAgent(
   const request = { ...original, projectPath: await realpath(original.projectPath) };
   const binary = await deps.resolveBinary();
   if (!binary) throw new Error("Claude Code isn't installed on this computer.");
-  const built = buildCliPrompt(request.messages);
-  const { prompt } = built;
-  const system = [await projectContext(request.projectPath), built.system ?? ""]
+  const chosenPath = original.projectPath;
+  const full = buildCliPrompt(request.messages);
+  const system = [await projectContext(request.projectPath), full.system ?? ""]
     .filter((part) => part.trim() !== "")
     .join("\n\n");
+  const sessions = deps.sessions?.tracks(request) ? deps.sessions : undefined;
+  if (!sessions) {
+    yield* claudeTurn(request, deps, { binary, chosenPath, system, prompt: full });
+    return;
+  }
+  // What the session was started with; a new model, folder, or instructions start a new one.
+  const setup = JSON.stringify([request.model, request.projectPath, system]);
+  const keep = (sessionId: string) => sessions.keep(request, setup, sessionId);
+  const resume = sessions.take(request, setup);
+  yield* resumeOrReplay(
+    resume === undefined
+      ? undefined
+      : () =>
+          claudeTurn(request, deps, {
+            binary,
+            chosenPath,
+            system,
+            prompt: latestPrompt(request.messages),
+            resume,
+            keep,
+          }),
+    () => claudeTurn(request, deps, { binary, chosenPath, system, prompt: full, keep }),
+    request.signal,
+  );
+}
+
+// One try of a reply. Resuming passes the same tools, permission settings, and instructions as a
+// first turn, so every action still asks Zenith; Claude Code keeps no approvals between runs.
+async function* claudeTurn(
+  request: SendMessageRequest & { projectPath: string },
+  deps: ClaudeAgentDeps,
+  turn: {
+    binary: string;
+    // The folder as the user chose it, before resolving links; the task board is keyed by it.
+    chosenPath: string;
+    system: string;
+    prompt: CliPrompt;
+    resume?: string;
+    // Records the session once the reply ends cleanly; unset when the pane's turns aren't kept.
+    keep?(sessionId: string): void;
+  },
+): AsyncIterable<ChatChunk> {
+  const { binary, system, prompt: built } = turn;
+  const { prompt } = built;
   const tools = agentTools(request);
   const rules = deps.permissionRules?.() ?? [];
   // A reading tool named by an ask or deny rule is not pre-approved, so Claude Code asks Zenith.
@@ -272,7 +321,8 @@ export async function* runClaudeAgent(
     freeTools.join(","),
     "--setting-sources",
     "",
-    "--no-session-persistence",
+    ...(turn.keep ? [] : ["--no-session-persistence"]),
+    ...(turn.resume ? [`--resume=${turn.resume}`] : []),
     "--strict-mcp-config",
     ...(mcpConfig ? ["--mcp-config", mcpConfig] : []),
     ...(sandboxSettings ? ["--settings", sandboxSettings] : []),
@@ -326,6 +376,7 @@ export async function* runClaudeAgent(
   let contextWindow: number | undefined;
   let contextUsage: TokenUsage | undefined;
   let streamError: string | undefined;
+  let sessionId: string | undefined;
 
   const update = (id: string, patch: Partial<AgentActivity>): ChatChunk | undefined => {
     const current = activities.get(id);
@@ -448,7 +499,7 @@ export async function* runClaudeAgent(
           if (tool === "TodoWrite") {
             const todos = parseTodos(input);
             // The board is keyed by the folder as the user chose it.
-            deps.syncTodos(original.projectPath, todos);
+            deps.syncTodos(turn.chosenPath, todos);
             yield { delta: "", done: false, todos };
           }
         }
@@ -502,6 +553,7 @@ export async function* runClaudeAgent(
       if (parsed?.contextWindow) contextWindow = parsed.contextWindow;
       if (parsed?.contextUsage) contextUsage = parsed.contextUsage;
       if (parsed?.error) streamError ??= parsed.error;
+      if (parsed?.sessionId) sessionId = parsed.sessionId;
       if (event["type"] === "result") child.stdin.end();
     }
 
@@ -513,12 +565,14 @@ export async function* runClaudeAgent(
         lastNonEmptyLine(stderr) ?? `Claude Code exited with code ${code ?? "unknown"}.`,
       );
     }
+    if (sessionId) turn.keep?.(sessionId);
     yield {
       delta: "",
       done: true,
       ...(usage ? { usage } : {}),
       ...(contextWindow ? { contextWindow } : {}),
       ...(contextUsage ? { contextUsage } : {}),
+      ...(turn.resume ? { resumed: true } : {}),
     };
   } finally {
     request.signal?.removeEventListener("abort", kill);

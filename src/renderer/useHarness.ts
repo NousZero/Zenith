@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   branchMessages,
+  type LastTurn,
+  resumeFrom,
   retryTarget,
   titleFromPrompt,
   undoLastExchange,
@@ -141,9 +143,14 @@ export function useHarness(
         assistantId: string;
         text: string;
         usage?: TokenUsage;
+        // What the pane's last turn will record if this reply ends cleanly.
+        turn: Pick<LastTurn, "providerId" | "modelId" | "projectPath"> & { historyLength: number };
       }
     >(),
   );
+  // Each pane's last cleanly finished turn. Kept in memory only: after a restart the agent's
+  // session is gone too, and the first turn sends the whole conversation.
+  const lastTurns = useRef(new Map<string, LastTurn>());
   const [streamingPaneIds, setStreamingPaneIds] = useState<ReadonlySet<string>>(new Set());
   // Pane id to session id for every running reply, so a tab or rail row other than the open one
   // can show that its session is working.
@@ -221,7 +228,17 @@ export function useHarness(
       if (chunk.usage) state.usage = chunk.usage;
       if (chunk.contextUsage) state.usage = chunk.contextUsage;
       const { assistantId, text, usage: reported, sessionId } = state;
-      if (chunk.done) endStream(paneId);
+      if (chunk.done) {
+        const { historyLength, ...turn } = state.turn;
+        // As the pane holds it once withReply has added the reply, which it skips when empty.
+        lastTurns.current.set(paneId, {
+          ...turn,
+          requestId,
+          messageCount: historyLength + (text === "" ? 1 : 2),
+          lastMessageId: text === "" ? requestId : assistantId,
+        });
+        endStream(paneId);
+      }
       // A reply that ends while another session is open is written to its own session on disk,
       // since that session is no longer in memory.
       if (chunk.done && !sessionRef.current.panes.some((pane) => pane.id === paneId)) {
@@ -310,11 +327,21 @@ export function useHarness(
       abortPane(pane.id);
       ensureChunkListener();
       const requestId = crypto.randomUUID();
+      const resume = resumeFrom(lastTurns.current.get(pane.id), pane, history);
+      // This turn changes the agent's session whatever its outcome, so the earlier turn can't be
+      // continued again; only a clean end records a new one.
+      lastTurns.current.delete(pane.id);
       streamState.current.set(pane.id, {
         requestId,
         sessionId: session.id,
         assistantId: crypto.randomUUID(),
         text: "",
+        turn: {
+          providerId: pane.providerId,
+          modelId: pane.modelId,
+          projectPath: pane.projectPath,
+          historyLength: history.length,
+        },
       });
       setStreamingPaneIds(new Set(streamState.current.keys()));
       setRunningSessions(
@@ -387,6 +414,7 @@ export function useHarness(
           projectPath: pane.projectPath,
           planMode: pane.planMode,
           ...(agent?.tools ? { allowedTools: agent.tools } : {}),
+          ...(resume ? { resumeFrom: resume } : {}),
         })
         .catch((error: unknown) => {
           // An aborted or superseded request is not an error for the pane.
@@ -417,6 +445,8 @@ export function useHarness(
   // Replaces all but the most recent messages with a summary written by the pane's own model.
   const summarize = useCallback(
     async (pane: PaneState, messages: PaneMessage[]): Promise<PaneMessage[]> => {
+      // The summary replaces history the agent's session still holds, so it can't be continued.
+      lastTurns.current.delete(pane.id);
       compacting.current.add(pane.id);
       setCompactingPaneIds(new Set(compacting.current));
       try {
@@ -660,6 +690,8 @@ export function useHarness(
       if (!turn || streamState.current.has(paneId)) return;
       try {
         const restored = await window.zenith.projects.rollback(turn.turnId);
+        // The agent's session remembers the files as it left them; start over with the transcript.
+        lastTurns.current.delete(paneId);
         setAgentTurns((current) =>
           current[paneId]?.turnId === turn.turnId
             ? { ...current, [paneId]: { ...turn, rolledBack: restored } }
@@ -681,6 +713,8 @@ export function useHarness(
       const pane = session.panes.find((candidate) => candidate.id === paneId);
       if (!turn || !pane?.projectPath || streamState.current.has(paneId)) return false;
       try {
+        // As with undoing every file, the agent's session no longer matches the folder.
+        lastTurns.current.delete(paneId);
         return await window.zenith.projects.rollbackFile(turn.turnId, pane.projectPath, path);
       } catch (error: unknown) {
         updatePane(paneId, {

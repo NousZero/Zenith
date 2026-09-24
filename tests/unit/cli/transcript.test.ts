@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertSafeModelId,
   buildCliPrompt,
+  latestPrompt,
   withSystemPreamble,
 } from "../../../src/main/cli/transcript";
 
@@ -64,5 +65,22 @@ describe("assertSafeModelId", () => {
     expect(() => assertSafeModelId("-p")).toThrow("Unsupported model id");
     expect(() => assertSafeModelId("")).toThrow("Unsupported model id");
     expect(() => assertSafeModelId("a b")).toThrow("Unsupported model id");
+  });
+});
+
+describe("latestPrompt", () => {
+  it("keeps the instructions and the newest message, and drops the earlier turns", () => {
+    expect(
+      latestPrompt([
+        { role: "system", content: "Be terse." },
+        { role: "user", content: "one" },
+        { role: "assistant", content: "1" },
+        { role: "user", content: "two", images: [{ id: "i", mediaType: "image/png" }] },
+      ]),
+    ).toEqual({
+      system: "Be terse.",
+      prompt: "two",
+      images: [{ id: "i", mediaType: "image/png" }],
+    });
   });
 });

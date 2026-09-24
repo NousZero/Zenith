@@ -2,8 +2,10 @@
 // A stand-in for `claude -p --input-format stream-json --permission-prompt-tool stdio`.
 // Proposes an edit to notes.txt, waits for Zenith's decision, then updates its todo list and replies.
 // With FAKE_CLAUDE_STALL_MS set, it first logs a warning to stderr and says nothing for that long,
-// like Claude Code waiting out a rate limit.
-import { readFileSync, writeFileSync } from "node:fs";
+// like Claude Code waiting out a rate limit. It reports a session id, continues one named by
+// --resume=<id>, appends its arguments and prompt to FAKE_CLAUDE_LOG, and with
+// FAKE_CLAUDE_FAIL_RESUME set refuses to resume, like Claude Code whose session file is gone.
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -11,6 +13,15 @@ const out = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 if (process.env.FAKE_CLAUDE_ARGS_FILE) {
   writeFileSync(process.env.FAKE_CLAUDE_ARGS_FILE, JSON.stringify(process.argv.slice(2)));
 }
+const resume = process.argv
+  .slice(2)
+  .find((arg) => arg.startsWith("--resume="))
+  ?.slice("--resume=".length);
+if (resume && process.env.FAKE_CLAUDE_FAIL_RESUME) {
+  process.stderr.write(`No conversation found with session ID: ${resume}\n`);
+  process.exit(1);
+}
+const sessionId = resume ?? `fake-session-${process.pid}`;
 const file = join(process.cwd(), "notes.txt");
 const lines = createInterface({ input: process.stdin });
 let step = "prompt";
@@ -19,6 +30,13 @@ lines.on("line", (line) => {
   const message = JSON.parse(line);
   if (step === "prompt" && message.type === "user") {
     step = "approval";
+    if (process.env.FAKE_CLAUDE_LOG) {
+      const { content } = message.message;
+      const prompt =
+        typeof content === "string" ? content : content.map((block) => block.text ?? "").join("");
+      const entry = { args: process.argv.slice(2), prompt, sessionId };
+      appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify(entry)}\n`);
+    }
     const stall = Number(process.env.FAKE_CLAUDE_STALL_MS ?? 0);
     if (stall > 0) {
       process.stderr.write("[WARN] API rate limited (429); retrying in 30s\n");
@@ -66,6 +84,7 @@ lines.on("line", (line) => {
     });
     out({
       type: "result",
+      session_id: sessionId,
       is_error: false,
       usage: { input_tokens: 40, output_tokens: 8 },
       modelUsage: { m: { contextWindow: 200000 } },
@@ -75,7 +94,7 @@ lines.on("line", (line) => {
 lines.on("close", () => process.exit(0));
 
 function propose() {
-  out({ type: "system", subtype: "init", cwd: process.cwd() });
+  out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId });
   const input = {
     file_path: file,
     old_string: "alpha\n",

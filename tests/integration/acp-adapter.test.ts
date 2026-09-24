@@ -7,7 +7,7 @@ import type { ChatChunk, ChatMessage, SendMessageRequest } from "../../src/share
 
 const agentScript = join(import.meta.dirname, "..", "fixtures", "fake-acp-agent.mjs");
 
-function makeAdapter(env: Record<string, string> = {}) {
+function makeAdapter(env: Record<string, string> = {}, idleCloseMs?: number) {
   return createAcpAdapter(
     { id: "fake-agent", label: "Fake agent", args: [agentScript] },
     {
@@ -16,6 +16,7 @@ function makeAdapter(env: Record<string, string> = {}) {
       cwd: tmpdir(),
       clientVersion: "test",
       mcpServers: async () => [],
+      ...(idleCloseMs === undefined ? {} : { idleCloseMs }),
     },
   );
 }
@@ -79,31 +80,108 @@ describe("createAcpAdapter with a real child process", () => {
     });
   });
 
-  it("reuses the session while history matches and starts over when it diverges", async () => {
+  it("continues the session when the window names the last turn, and starts over otherwise", async () => {
     adapter = makeAdapter();
     const first: ChatMessage[] = [{ role: "user", content: "one" }];
-    const firstReply = await reply(adapter, { messages: first });
+    const firstReply = await reply(adapter, { messages: first, turnId: "t1" });
     expect(firstReply.text).toBe("s1|default|one");
+    const history: ChatMessage[] = [...first, { role: "assistant", content: firstReply.text }];
 
     const second = await reply(adapter, {
+      messages: [...history, { role: "user", content: "two" }],
+      turnId: "t2",
+      resumeFrom: "t1",
+    });
+    expect(second.text).toBe("s1|default|two");
+    expect(second.chunks.at(-1)).toMatchObject({ done: true, resumed: true });
+
+    // Undo: the window no longer names a turn to continue, so the agent gets a fresh transcript.
+    const retried = await reply(adapter, {
+      messages: [...history, { role: "user", content: "again" }],
+      turnId: "t3",
+    });
+    expect(retried.text).toMatch(/^s2\|default\|Here is our conversation so far/);
+    expect(retried.text).toContain("<user>\nagain\n</user>");
+    expect(retried.chunks.at(-1)?.resumed).toBeUndefined();
+  });
+
+  it("starts over when the instructions changed since the kept turn", async () => {
+    adapter = makeAdapter();
+    const first: ChatMessage[] = [
+      { role: "system", content: "Be terse." },
+      { role: "user", content: "one" },
+    ];
+    const firstReply = await reply(adapter, { messages: first, turnId: "t1" });
+    const { text } = await reply(adapter, {
+      messages: [
+        { role: "system", content: "Be chatty." },
+        { role: "user", content: "one" },
+        { role: "assistant", content: firstReply.text },
+        { role: "user", content: "two" },
+      ],
+      turnId: "t2",
+      resumeFrom: "t1",
+    });
+    expect(text).toMatch(/^s2\|default\|Follow these instructions:\nBe chatty\./);
+  });
+
+  it("sends the whole transcript in the same turn when the kept session is gone", async () => {
+    adapter = makeAdapter();
+    const first: ChatMessage[] = [{ role: "user", content: "FORGET" }];
+    const firstReply = await reply(adapter, { messages: first, turnId: "t1" });
+    const { text, chunks } = await reply(adapter, {
       messages: [
         ...first,
         { role: "assistant", content: firstReply.text },
         { role: "user", content: "two" },
       ],
+      turnId: "t2",
+      resumeFrom: "t1",
     });
-    expect(second.text).toBe("s1|default|two");
+    expect(text).toMatch(/^s2\|default\|Here is our conversation so far/);
+    expect(text).toContain("<user>\ntwo\n</user>");
+    expect(chunks.at(-1)?.resumed).toBeUndefined();
+  });
 
-    // Undo: the pane no longer holds "two" or its reply, so the agent gets a fresh transcript.
-    const retried = await reply(adapter, {
+  it("asks the pane of a continued session for approval", async () => {
+    adapter = makeAdapter();
+    const first: ChatMessage[] = [{ role: "user", content: "one" }];
+    const firstReply = await reply(adapter, { messages: first, turnId: "t1" });
+    const titles: string[] = [];
+    const { text, chunks } = await reply(adapter, {
       messages: [
         ...first,
         { role: "assistant", content: firstReply.text },
-        { role: "user", content: "again" },
+        { role: "user", content: "PERMISSION" },
       ],
+      turnId: "t2",
+      resumeFrom: "t1",
+      requestPermission: async (prompt) => {
+        titles.push(prompt.title);
+        return "yes";
+      },
     });
-    expect(retried.text).toMatch(/^s2\|default\|Here is our conversation so far/);
-    expect(retried.text).toContain("<user>\nagain\n</user>");
+    expect(titles).toEqual(["rm -rf build"]);
+    expect(text).toBe('outcome={"outcome":"selected","optionId":"yes"}');
+    expect(chunks.at(-1)?.resumed).toBe(true);
+  });
+
+  it("closes an idle agent, after which the next turn starts over with the transcript", async () => {
+    adapter = makeAdapter({}, 20);
+    const first: ChatMessage[] = [{ role: "user", content: "one" }];
+    const firstReply = await reply(adapter, { messages: first, turnId: "t1" });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const { text } = await reply(adapter, {
+      messages: [
+        ...first,
+        { role: "assistant", content: firstReply.text },
+        { role: "user", content: "two" },
+      ],
+      turnId: "t2",
+      resumeFrom: "t1",
+    });
+    // A new process numbers its sessions from s1 again.
+    expect(text).toMatch(/^s1\|default\|Here is our conversation so far/);
   });
 
   it("sets the model on a new session", async () => {

@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 // Stand-in Claude Code for screenshots: answers --version, then runs one scripted agent turn
 // (a command, a read, an edit that asks) so the transcript can be looked at without real quota.
+// It reports a session id, continues one named by --resume=<id>, and appends its arguments and
+// prompt to FAKE_CLAUDE_LOG, so a test can see whether a turn continued the session.
+import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const args = process.argv.slice(2);
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 if (args[0] === "--version") { console.log("2.1.275 (Claude Code)"); process.exit(0); }
 if (args[0] === "auth") { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
+const resume = args.find((arg) => arg.startsWith("--resume="))?.slice("--resume=".length);
+const sessionId = resume ?? `fake-session-${process.pid}`;
 // Without a project folder Claude Code chats: the prompt, with any earlier turns as a transcript,
 // arrives as plain text, and the reply says how many earlier messages it was given. Reading all
 // of stdin here leaves nothing for the scripted agent turn below, so it never starts.
@@ -24,7 +29,12 @@ lines.on("line", (line) => {
   const message = JSON.parse(line);
   if (step === "prompt" && message.type === "user") {
     step = "approval";
-    out({ type: "system", subtype: "init", cwd: process.cwd() });
+    if (process.env.FAKE_CLAUDE_LOG) {
+      const { content } = message.message;
+      const prompt = typeof content === "string" ? content : content.map((block) => block.text ?? "").join("");
+      appendFileSync(process.env.FAKE_CLAUDE_LOG, `${JSON.stringify({ args, prompt, sessionId })}\n`);
+    }
+    out({ type: "system", subtype: "init", cwd: process.cwd(), session_id: sessionId });
     out({ type: "assistant", message: { content: [{ type: "tool_use", id: "t0", name: "TodoWrite", input: { todos: [
       { content: "Run the test suite", status: "completed", activeForm: "Running the test suite" },
       { content: "Read the IPC handlers", status: "completed", activeForm: "Reading the IPC handlers" },
@@ -47,7 +57,7 @@ lines.on("line", (line) => {
     for (const piece of reply.match(/.{1,24}/gs) ?? []) {
       out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: piece } } });
     }
-    out({ type: "result", subtype: "success", usage: { input_tokens: 1200, output_tokens: 180 } });
+    out({ type: "result", subtype: "success", session_id: sessionId, usage: { input_tokens: resume ? 150 : 1200, output_tokens: 180 } });
     lines.close();
   }
 });

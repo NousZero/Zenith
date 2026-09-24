@@ -33,6 +33,8 @@ export async function describeContext(input: {
   projectPath?: string | undefined;
   planMode?: boolean | undefined;
   allowedTools?: string[] | undefined;
+  // The agent continued its own session, which already holds everything but the newest message.
+  resumed?: boolean;
 }): Promise<ContextSnapshot> {
   const sections: ContextSnapshot["sections"] = [];
   const toolOptions = {
@@ -85,6 +87,19 @@ export async function describeContext(input: {
         recall ? recall.message : latest.content,
       ),
     );
+  }
+
+  if (input.resumed) {
+    // The latest message is always the last section.
+    const sent = sections.slice(-1);
+    return {
+      at: Date.now(),
+      providerId: input.providerId,
+      modelId: input.modelId,
+      sections: sent,
+      totalTokens: sent.reduce((sum, item) => sum + item.tokens, 0),
+      note: "This turn continued the agent's own session, so Zenith sent only the newest message. The agent already holds the instructions and earlier conversation from previous turns, and its token counts include them.",
+    };
   }
 
   const note = [

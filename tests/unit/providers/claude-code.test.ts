@@ -64,6 +64,13 @@ describe("parseClaudeCodeLine", () => {
     );
   });
 
+  it("reads the session id from the init and result messages", () => {
+    const init = '{"type":"system","subtype":"init","session_id":"abc"}';
+    expect(parseClaudeCodeLine(init)).toEqual({ sessionId: "abc" });
+    const result = JSON.stringify({ type: "result", is_error: false, session_id: "abc" });
+    expect(parseClaudeCodeLine(result)).toEqual({ sessionId: "abc" });
+  });
+
   it("ignores non-text events and non-JSON output", () => {
     expect(parseClaudeCodeLine('{"type":"system","subtype":"init"}')).toBeUndefined();
     expect(
@@ -98,5 +105,18 @@ describe("claudeCodeSpec.buildInvocation", () => {
     });
     expect(args).toContain("--system-prompt=- bullet memory");
     expect(args.some((arg) => arg.startsWith("--model"))).toBe(false);
+  });
+
+  it("saves a pane's turn so it can be continued, and continues a named session", () => {
+    const kept = claudeCodeSpec.buildInvocation(undefined, { system: undefined, prompt: "q" }, {});
+    expect(kept.args).not.toContain("--no-session-persistence");
+    expect(kept.args.some((arg) => arg.startsWith("--resume"))).toBe(false);
+    const resumed = claudeCodeSpec.buildInvocation(
+      undefined,
+      { system: undefined, prompt: "q" },
+      { resume: "abc" },
+    );
+    expect(resumed.args).toContain("--resume=abc");
+    expect(resumed.args).toContain("--system-prompt=You are a helpful assistant.");
   });
 });

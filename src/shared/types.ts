@@ -121,6 +121,9 @@ export interface ChatChunk {
   // Why a running agent has gone quiet, from its own warnings (a quota retry, say), so the user
   // sees more than "thinking…". Cleared by the next sign of progress.
   notice?: string;
+  // Set on the last chunk when the reply continued the agent's own session, so only the newest
+  // message was sent.
+  resumed?: boolean;
 }
 
 export type ConnectionKind = "cli" | "agent" | "local" | "api-key";
@@ -178,6 +181,9 @@ export interface SendMessageRequest {
   projectPath?: string;
   // Identifies the reply, so file checkpoints can be rolled back later.
   turnId?: string;
+  // The pane's previous turn, when the window knows the conversation is unchanged since it ended;
+  // an agent that kept that turn's session continues it and gets only the newest message.
+  resumeFrom?: string;
   // Read-only planning: agents get no tools that change files or run commands.
   planMode?: boolean;
   // Tool names an agent definition allows; undefined means the default set.
@@ -638,6 +644,7 @@ export interface ZenithApi {
       projectPath?: string | null;
       planMode?: boolean;
       allowedTools?: string[];
+      resumeFrom?: string;
     }): Promise<void>;
     abort(requestId: string): Promise<void>;
     // Runs one request to completion and returns the whole reply, e.g. for compaction.
