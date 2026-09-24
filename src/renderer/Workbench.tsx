@@ -62,8 +62,8 @@ export function TopBar(props: {
   onToggleDock(): void;
   pendingCount: number;
   inspector: ReactNode;
-  // Replaces the last crumb, such as an editable session name.
-  title?: ReactNode;
+  // Replaces the breadcrumb, as the session tabs do on the Workspace.
+  tabs?: ReactNode;
   // Page controls shown before the global ones.
   actions?: ReactNode;
 }) {
@@ -82,25 +82,23 @@ export function TopBar(props: {
         </span>
         <span className="text-[13px] font-semibold">Zenith</span>
       </div>
-      <nav
-        aria-label="Location"
-        className="flex min-w-0 items-center gap-2 px-[18px] text-[11.5px] text-muted-foreground"
-      >
-        {props.crumbs.map((crumb, index) => (
-          <span key={`${index}-${crumb}`} className="flex min-w-0 items-center gap-2">
-            {index > 0 && <span aria-hidden>/</span>}
-            {index === props.crumbs.length - 1 && props.title ? (
-              props.title
-            ) : (
+      {props.tabs ?? (
+        <nav
+          aria-label="Location"
+          className="flex min-w-0 items-center gap-2 px-[18px] text-[11.5px] text-muted-foreground"
+        >
+          {props.crumbs.map((crumb, index) => (
+            <span key={`${index}-${crumb}`} className="flex min-w-0 items-center gap-2">
+              {index > 0 && <span aria-hidden>/</span>}
               <span
                 className={cn("truncate", index === props.crumbs.length - 1 && "text-foreground")}
               >
                 {crumb}
               </span>
-            )}
-          </span>
-        ))}
-      </nav>
+            </span>
+          ))}
+        </nav>
+      )}
       <div className="flex items-center gap-1 pr-3">
         {props.actions}
         <Tooltip>

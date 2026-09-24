@@ -436,3 +436,31 @@ green again (150 unit, 101 integration, 2 component).
   History dialog drew over an empty area with the page hidden, and the page followed a window
   resize and the bottom panel. From inside the page, location, microphone and notifications were
   denied, `window.open` loaded in the same view, and `window.zenith` and `require` were undefined.
+
+## Session tabs (implemented 2026-09-24)
+
+On the Workspace, the top bar's breadcrumb gave way to Safari-like tabs, one per open session
+(`SessionTabs.tsx`, with the list rules in `tabList.ts`). Other pages keep their breadcrumb.
+
+- A rail click, History, a branch, or a new session opens the session in a tab, or focuses the tab
+  it already has. The open tab looks raised, shows the running or waiting dot, and renames inline
+  on a double-click; the others show a close button on hover. Many tabs scroll, keeping the open
+  one in view.
+- Closing a tab keeps the session in the rail and focuses the tab to its right (or left when it
+  was last). Closing the last tab opens a new empty session. Deleting a session closes its tab.
+- The tabs and their order are kept in `localStorage` (`zenith.sessionTabs`); sessions deleted
+  since are dropped. The tab opened at launch is still the most recently saved session, which is
+  the tab last open, since focusing one saves it.
+- Keys: ⌘T / Ctrl+T new tab, ⌘W / Ctrl+W close tab, ⌘1–⌘8 that tab and ⌘9 the last,
+  Ctrl+Tab and Ctrl+Shift+Tab to cycle. Electron's default menu closes the window on ⌘W (and on
+  Windows and Linux quits with Ctrl+W), so main tells the menu to ignore that key. Outside macOS,
+  keys typed in the terminal stay the terminal's.
+- A reply still running when you switch tabs is not stopped, as before: it keeps running, and its
+  approvals still reach the bottom panel. Return before it finishes and the whole reply shows; if
+  it finishes while another tab is open, the part that arrived after you left is not saved to its
+  session. The running and waiting dot follows the open tab, since it reports the one run in
+  progress.
+- **Verified:** unit tests for the list rules and storage; an e2e test that opens two tabs,
+  switches between them, closes one with ⌘W (the session stays in the rail) and closes the last
+  (a new empty one opens). In the packaged app, a real ⌘W keystroke closed a tab and left the
+  window open.
