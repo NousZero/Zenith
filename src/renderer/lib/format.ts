@@ -16,3 +16,9 @@ export function formatRelativeTime(timestamp: number, now: number = Date.now()):
   if (days < 7) return `${days}d`;
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+// What to tell the user when some worktrees could not be removed, so none is left silently.
+export function leftoverNotice(leftovers: readonly string[]): string {
+  if (leftovers.length === 0) return "";
+  return ` Couldn't remove ${leftovers.join(", ")}. Remove ${leftovers.length === 1 ? "it" : "them"} with "git worktree remove", or delete the folder and run "git worktree prune".`;
+}

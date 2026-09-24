@@ -1,6 +1,7 @@
 import {
   ArrowUp,
   Clock,
+  Columns3,
   FileText,
   FolderOpen,
   ImagePlus,
@@ -85,6 +86,8 @@ export function Composer(props: {
   extras?: Record<ExtraId, boolean>;
   // Receives the element the pane renders its provider, model, and folder controls into.
   onControlsSlot?: (element: HTMLElement | null) => void;
+  // Opens the side-by-side comparison of assistants on this project.
+  onCompare?(): void;
 }) {
   const { prompt, onPromptChange: setPrompt, onControlsSlot, extras } = props;
   const dictation = useDictation((text) =>
@@ -576,6 +579,12 @@ export function Composer(props: {
                   <span className="ml-auto pl-4 font-mono text-[11px] text-muted-foreground">
                     @
                   </span>
+                </DropdownMenuItem>
+              )}
+              {projectPath && props.onCompare && (
+                <DropdownMenuItem onSelect={props.onCompare}>
+                  <Columns3 />
+                  Compare assistants…
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>

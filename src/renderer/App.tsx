@@ -7,6 +7,7 @@ import {
   RotateCcw,
   BarChart3,
   Bot,
+  Columns3,
   CalendarClock,
   FileText,
   FileDown,
@@ -42,6 +43,7 @@ import { BUILTIN_COMMAND_NAMES, type Command } from "./commands";
 import { Button } from "./components/ui/button";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { Composer, COMPOSER_INPUT_ID } from "./Composer";
+import { CompareDialog, CompareView, type ActiveComparison } from "./Compare";
 import { HistoryDialog, type AskTarget, type HistoryTab } from "./HistoryDialog";
 import {
   LibraryBrowser,
@@ -53,7 +55,7 @@ import { EmptyState } from "./EmptyState";
 import { useExtras } from "./extras";
 import { FilesView } from "./FilesView";
 import { GoalsView } from "./GoalsView";
-import { formatTokens } from "./lib/format";
+import { formatTokens, leftoverNotice } from "./lib/format";
 import { MemoryPopover } from "./MemoryPopover";
 import { Pane } from "./Pane";
 import { cn } from "./lib/utils";
@@ -97,6 +99,7 @@ import {
 } from "./providers";
 import {
   createEmptySession,
+  createPane,
   loadSessionOrCreate,
   persistSession,
   useHarness,
@@ -180,6 +183,9 @@ export function App() {
     "USER.md": "",
   });
   const [history, setHistory] = useState<{ tab: HistoryTab; query: string } | null>(null);
+  // The compare dialog's starting prompt while it is open, and the comparison under way.
+  const [compareDraft, setCompareDraft] = useState<string | null>(null);
+  const [comparison, setComparison] = useState<ActiveComparison | null>(null);
   const { extras, setExtra } = useExtras();
   const {
     session,
@@ -598,6 +604,67 @@ export function App() {
     setActivity("workspace");
   }
 
+  // Every run is a pane of this session working in its own worktree, hidden from the single-pane
+  // view and left out of broadcasts; the comparison view shows them side by side.
+  async function startComparison(providerIds: string[], prompt: string) {
+    const projectPath = pane?.projectPath;
+    if (!projectPath) throw new Error("Choose a project folder first.");
+    const started = await window.zenith.compare.start(projectPath, providerIds, prompt);
+    const runPanes = await Promise.all(
+      started.runs.map(async (run) => {
+        const connection = connections.find((item) => item.id === run.providerId);
+        const modelId = connection ? await defaultModelFor(connection) : DEFAULT_CLI_MODEL_ID;
+        return {
+          ...createPane(crypto.randomUUID(), { providerId: run.providerId, modelId }),
+          name: providerMeta(run.providerId).label,
+          included: false,
+          projectPath: run.path,
+        };
+      }),
+    );
+    setSession((current) => ({ ...current, panes: [...current.panes, ...runPanes] }));
+    setComparison({
+      ...started,
+      sessionId: session.id,
+      prompt,
+      paneIds: Object.fromEntries(runPanes.map((item) => [item.providerId, item.id])),
+      outcome: null,
+    });
+    for (const runPane of runPanes) sendToPane(runPane, prompt);
+  }
+
+  // Keep and discard both remove the worktrees, so every run stops first.
+  async function keepRun(providerId: string) {
+    if (!comparison) return;
+    for (const paneId of Object.values(comparison.paneIds)) abortPane(paneId);
+    const { applied, leftovers } = await window.zenith.compare.keep(
+      comparison.projectPath,
+      comparison.id,
+      providerId,
+    );
+    const outcome =
+      applied === 0
+        ? `${providerMeta(providerId).label} changed no files, so nothing was applied. Worktrees removed.`
+        : `Applied ${providerMeta(providerId).label}'s changes to ${folderLabel(comparison.projectPath)}: ${applied} ${applied === 1 ? "file" : "files"}, staged and ready to commit. Worktrees removed.`;
+    setComparison({ ...comparison, outcome: outcome + leftoverNotice(leftovers) });
+  }
+
+  async function discardComparison() {
+    if (!comparison) return;
+    for (const paneId of Object.values(comparison.paneIds)) abortPane(paneId);
+    const leftovers = await window.zenith.compare.discard(comparison.projectPath, comparison.id);
+    setComparison({
+      ...comparison,
+      outcome: `Discarded the comparison. Your project is unchanged.${leftoverNotice(leftovers)}`,
+    });
+  }
+
+  function closeComparison() {
+    if (!comparison) return;
+    for (const paneId of Object.values(comparison.paneIds)) removePane(paneId);
+    setComparison(null);
+  }
+
   const builtinCommands: Command[] = [
     {
       name: "context",
@@ -654,6 +721,13 @@ export function App() {
         ),
     },
     { name: "new", title: "New session", icon: SquarePen, run: () => void createSession() },
+    {
+      name: "compare",
+      title: "Compare assistants side by side",
+      icon: Columns3,
+      argument: "<prompt>",
+      run: (prompt) => setCompareDraft(prompt),
+    },
     {
       name: "retry",
       title: "Retry the last prompt",
@@ -863,7 +937,21 @@ export function App() {
   );
 
   const paneTurn = pane ? agentTurns[pane.id] : undefined;
-  const workspaceView = (
+  const activeComparison = comparison?.sessionId === session.id ? comparison : null;
+  const comparisonPaneIds = new Set(Object.values(activeComparison?.paneIds ?? {}));
+  const workspaceView = activeComparison ? (
+    <CompareView
+      comparison={activeComparison}
+      panes={session.panes}
+      streamingPaneIds={streamingPaneIds}
+      agentTurns={agentTurns}
+      permissions={permissions}
+      onRespondPermission={respondPermission}
+      onKeep={keepRun}
+      onDiscard={discardComparison}
+      onClose={closeComparison}
+    />
+  ) : (
     <>
       <div className="min-h-0 flex-1 bg-background">
         {pane ? (
@@ -976,6 +1064,7 @@ export function App() {
         status={runStatus}
         permissionsVersion={guardVersion}
         extras={extras}
+        onCompare={() => setCompareDraft(composerPrompt.startsWith("/") ? "" : composerPrompt)}
       />
     </>
   );
@@ -1249,7 +1338,9 @@ export function App() {
           projectPath={dockProjectPath}
           onProjectChange={setDockProject}
           refreshKey={streamingPaneIds.size}
-          panes={session.panes.slice(0, 1)}
+          panes={session.panes.filter(
+            (item, index) => index === 0 || comparisonPaneIds.has(item.id),
+          )}
           agentTurns={agentTurns}
           permissions={permissions}
           onRespondPermission={respondPermission}
@@ -1298,6 +1389,13 @@ export function App() {
           onStateChange={setLibraryState}
           onChanged={refreshLibrary}
           onPickAgent={(paneId, agentPath) => updatePane(paneId, { agentPath })}
+        />
+        <CompareDialog
+          prompt={compareDraft}
+          projectPath={pane?.projectPath ?? null}
+          connections={connections}
+          onClose={() => setCompareDraft(null)}
+          onStart={startComparison}
         />
         <CliOutputDialog output={cliOutput} onClose={() => setCliOutput(null)} />
         <ContextDialog paneId={contextPaneId} onClose={() => setContextPaneId(null)} />

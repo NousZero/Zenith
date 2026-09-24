@@ -15,6 +15,7 @@ export interface Command {
 // Zenith's own commands; library skills and commands with these names are hidden, not shadowing them.
 export const BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set([
   "new",
+  "compare",
   "add",
   "retry",
   "undo",
