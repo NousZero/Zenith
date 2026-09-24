@@ -464,3 +464,46 @@ On the Workspace, the top bar's breadcrumb gave way to Safari-like tabs, one per
   switches between them, closes one with ⌘W (the session stays in the rail) and closes the last
   (a new empty one opens). In the packaged app, a real ⌘W keystroke closed a tab and left the
   window open.
+
+## Continuing the agent's own session (implemented 2026-09-24)
+
+CLI agents used to start fresh every turn with the whole conversation flattened into one prompt
+(`buildCliPrompt`), so each turn paid for everything again and the agent's own cache never helped.
+Now a pane whose conversation is unchanged since its last turn continues the agent's session and
+sends only the new message.
+
+- **The window decides.** `useHarness` remembers each pane's last clean turn (`LastTurn` in
+  `shared/conversation.ts`: connection, model, folder, message count, last message id) and sends
+  `resumeFrom` only when the history about to go out matches it (`resumeFrom()`). Undo, restore,
+  retry, branch, clear and a provider, model or folder switch all fail that check, and a restart
+  forgets everything. Starting any turn clears the record, so an error or a stop mid-turn leaves
+  nothing to continue; compaction and undoing file changes clear it too, since the agent's session
+  would still hold the old history or the old files.
+- **Main keeps the session** per pane (`cli/agent-sessions.ts`) and continues it only when
+  `resumeFrom` names the turn it recorded and the model, folder and instructions (persona, memory,
+  agent, plan mode, compaction summary) are unchanged; otherwise it sends the full transcript.
+  If continuing fails before anything reaches the pane, the same turn is sent again with the full
+  transcript (`resumeOrReplay`).
+- **Claude Code**, agent mode and chat: a pane's turns are saved (no `--no-session-persistence`,
+  so they also appear in Claude Code's own session list for that folder) and continued with
+  `--resume=<session_id>` from the `system`/`init` or `result` message, in the same folder. Every
+  other flag is the same as a first turn, including `--permission-prompt-tool stdio`, so every edit
+  and command still asks Zenith; Claude Code keeps no approvals between runs. One-off requests
+  (compaction, bots) still run without saving.
+- **ACP agents** (Gemini and Copilot in a folder, Hermes, OpenCode, and the rest) keep their
+  process and send `session/prompt` on the pane's session with only the new message. Permission
+  requests are routed by session id to the turn that sent the prompt. The process closes ten minutes
+  after the last turn and on quit; the next turn opens a new session with the transcript. This
+  replaces the earlier history fingerprint, which never matched when the prompt sent differed from
+  the one shown (a skill, say).
+- **Plain Gemini CLI and Copilot CLI chats are left out**: Gemini's `--resume` takes only "latest"
+  or an index, which races between panes, and Copilot's could not be checked without spending quota.
+- "What the model saw" shows only the newest message for a continued turn and says why; usage
+  estimates count only what was sent.
+- **Verified:** unit tests for the window's decision, the session store and the fallback; integration
+  tests with the stand-in Claude Code (second turn has `--resume` and only the new message, a changed
+  persona or a refused resume sends the transcript) and the fake ACP agent (continuing, a lost
+  session, approvals, idle close); an e2e test with two turns that continue, then a restore after
+  which the next turn sends the transcript. A live two-turn Claude Code check (haiku, agent mode)
+  continued the same session: the first turn wrote 13,638 tokens to the cache, the second wrote 92
+  and read the rest from it.
