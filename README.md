@@ -69,7 +69,8 @@ provider, model, folder and pane menu live in the chat box's controls row, not a
   commit, so they can't get in each other's way, and the results sit in columns with their status,
   approvals, reply and changed files. **Keep this one** applies that assistant's changes to your
   project, staged; **Discard all** leaves it unchanged. It needs a Git project with no uncommitted
-  changes, and Keep refuses if the project moved on meanwhile.
+  changes, and Keep refuses if the project moved on meanwhile. An unfinished comparison survives a
+  restart: reopen it from the card above the chat box.
 
 ### Safety
 
@@ -90,7 +91,8 @@ provider, model, folder and pane menu live in the chat box's controls row, not a
   in one click.
 - **A second opinion:** ask a _different_ connection to review the current patch for security
   problems, with the patch and nothing else. One request, only when you click.
-- **The review bar:** Keep, Undo all, or undo a single file from its chip.
+- **The review bar:** click a file's chip to read its diff inline; Keep (⌘⇧K), Undo all (⌘⇧⌫,
+  confirmed), or undo a single file from its chip.
 - **Restore to here:** roll the project and the conversation back to any earlier prompt.
 - **An audit log** of approvals, commands, edits, undos and checks, secrets masked before writing,
   in **Settings → Safety → Activity record**.
@@ -110,9 +112,8 @@ provider, model, folder and pane menu live in the chat box's controls row, not a
 - **Transcript that reads like a terminal:** your prompt keeps its own `❯` band, each tool call is
   one line (`Run`, then `└ $ npm test`, then the result under `⎿`, red when it failed, paths
   always shown with forward slashes), and the reply says which connection wrote it.
-- **If an ACP agent goes quiet** — waiting on its own model provider, for example — Zenith shows
-  its latest stderr warning in place of "thinking…" after 15 seconds. Claude Code and the plain
-  CLIs aren't covered yet.
+- **If an agent goes quiet** — waiting on its own model provider, for example — Zenith shows
+  its latest stderr warning in place of "thinking…" after 15 seconds.
 - **Queue a prompt:** type during a run and it waits as a cancellable chip, then goes on its own as
   soon as the reply ends.
 - **Bottom dock:** a real terminal (your own shell in a pseudo-terminal, so `vim`, `less` and
@@ -176,10 +177,15 @@ Requirements: **Node 24.17.0** and **npm 11.17.0** (see `engines` in `package.js
 npm install
 npm rebuild node-pty --ignore-scripts=false   # builds the terminal's native module
 npm run dev                                    # start in development
-npm run make                                   # build an app for this platform
+npm run make                                   # build the installable zip for this platform
 ```
 
 Nothing else is required to start: Zenith finds the AI tools already installed on the computer.
+The provider picker lists what's ready; everything else is one click away under **More
+assistants**.
+
+Each `v*` tag builds zip archives for macOS, Windows and Linux in CI (kept with the workflow run).
+They aren't signed yet, so macOS and Windows will warn the first time you open them.
 Add API providers later in **Settings → Assistants**.
 
 > The repository sets `ignore-scripts`, so native modules are built on purpose rather than during
@@ -267,8 +273,6 @@ including the risks that are accepted rather than solved.
   they wrote.
 - **Windows hasn't been used day to day.** CI runs and blocks on the full test contract there,
   but no one has worked in the app on Windows yet.
-- **Stall notices cover ACP agents only.** Claude Code and the plain CLIs don't yet say why
-  they've gone quiet.
 
 See [`PRD.md`](PRD.md) for the fuller list of what's shipped, what's next, and what's deliberately
 out of scope.

@@ -100,8 +100,8 @@ are already on the computer.
   language-server errors (TypeScript 7's own server, typescript-language-server, Pyright, gopls,
   rust-analyzer) fed back to the model.
 - **Transparency:** "What the model saw" shows every part of the last request with token counts; a
-  quiet ACP agent (waiting on its own provider, for example) shows its latest stderr warning after
-  15 seconds instead of a bare "thinking…" (Claude Code and the plain CLIs not yet covered).
+  quiet agent — ACP, Claude Code, or a plain CLI — (waiting on its own provider, for example) shows its latest stderr warning after
+  15 seconds instead of a bare "thinking…".
 - **Workspace:** a real terminal (pseudo-terminal, so full-screen programs work), tests, Git
   status, diffs, commits and worktrees, agent logs, and a central approvals queue.
 - **Files:** project tree, Markdown reading view with an outline, and offline previews of web
@@ -132,9 +132,8 @@ are already on the computer.
 
 ### Next
 
-- Windows used day to day, and signed packages for all three platforms.
-- Comparisons that survive a restart (today an unfinished one can only be discarded after one).
-- Stall notices (the "why has it gone quiet" message) extended to Claude Code and the plain CLIs.
+- Windows used day to day, and signed packages with auto-update for all three platforms (needs an
+  Apple Developer ID and a Windows code-signing certificate).
 
 ### Deliberately out of scope
 
