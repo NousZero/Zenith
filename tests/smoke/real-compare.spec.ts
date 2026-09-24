@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { launchApp } from "../e2e/support/electron-app";
 import { createGitProject } from "../e2e/support/git-project";
 import { setProjectFolder } from "../e2e/support/set-project-folder";
+import { approveOnce } from "./approve";
 
 // The flagship feature against real agents: Claude Code and Gemini get the same task side by
 // side in their own worktrees, one result is kept, and the project ends up with exactly that
@@ -49,10 +50,7 @@ test("compare Claude Code and Gemini CLI, then keep Claude's result", async () =
       (await claude.getByRole("status").first().innerText()) === "Done" &&
       (await gemini.getByRole("status").first().innerText()) === "Done";
     while (!(await finished()) && Date.now() < deadline) {
-      for (const column of [claude, gemini]) {
-        const allow = column.getByRole("button", { name: "Allow", exact: true });
-        if (await allow.first().isVisible()) await allow.first().click();
-      }
+      for (const column of [claude, gemini]) await approveOnce(column);
       await page.waitForTimeout(1_000);
     }
     const errors = await page.evaluate(async () => {

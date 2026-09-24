@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { launchApp } from "../e2e/support/electron-app";
 import { createGitProject } from "../e2e/support/git-project";
 import { composer, reviewBar } from "../e2e/support/send-and-approve";
+import { approveOnce } from "./approve";
 
 // One small, checkable task per real agent: create a file, then undo the reply and see it go.
 // Proves the part the stand-in suite can't: that each installed CLI still speaks the protocol
@@ -20,7 +21,8 @@ const ACCOUNT_PROBLEM =
 
 const AGENTS = [
   { providerId: "claude-code", binary: "claude", label: "Claude Code" },
-  { providerId: "gemini-cli", binary: "gemini", label: "Gemini CLI" },
+  // Flash: its free daily quota is far larger than the default model's, and it answers faster.
+  { providerId: "gemini-cli", binary: "gemini", label: "Gemini CLI", model: "flash" },
   { providerId: "copilot-cli", binary: "copilot", label: "Copilot CLI" },
   { providerId: "hermes", binary: "hermes", label: "Hermes Agent" },
 ] as const;
@@ -45,17 +47,21 @@ for (const agent of AGENTS) {
         .poll(() => page.evaluate(() => window.zenith.sessions.list().then((list) => list.length)))
         .toBeGreaterThan(0);
       await page.evaluate(
-        async ({ path, providerId }) => {
+        async ({ path, providerId, modelId }) => {
           const [summary] = await window.zenith.sessions.list();
           const session = summary && (await window.zenith.sessions.load(summary.id));
           const pane = session?.panes[0];
           if (!session || !pane) throw new Error("No session to point at the project.");
           pane.projectPath = path;
           pane.providerId = providerId;
-          pane.modelId = "default";
+          pane.modelId = modelId;
           await window.zenith.sessions.save(session);
         },
-        { path: project, providerId: agent.providerId },
+        {
+          path: project,
+          providerId: agent.providerId,
+          modelId: "model" in agent ? agent.model : "default",
+        },
       );
       await page.reload();
       await page.waitForLoadState("domcontentloaded");
@@ -78,10 +84,7 @@ for (const agent of AGENTS) {
       await expect(stop).toBeVisible();
       const deadline = Date.now() + 200_000;
       while ((await stop.isVisible()) && Date.now() < deadline) {
-        const allow = page
-          .getByRole("region", { name: "Conversation" })
-          .getByRole("button", { name: "Allow", exact: true });
-        if (await allow.isVisible()) await allow.first().click();
+        await approveOnce(page.getByRole("region", { name: "Conversation" }));
         await page.waitForTimeout(1_000);
       }
       // A stall notice that names a quota or sign-in problem is the account's, not Zenith's.
