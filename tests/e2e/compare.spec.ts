@@ -64,3 +64,57 @@ test("compare: two assistants run in their own worktrees, and Keep applies one",
     await close();
   }
 });
+
+test("compare: a comparison left open at quit can be reopened after a restart and discarded", async () => {
+  const projectPath = createGitProject();
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: projectPath, stdio: "pipe" }).toString();
+  const first = await launchApp();
+  try {
+    const { page } = first;
+    await setProjectFolder(page, projectPath);
+    await page.getByRole("button", { name: "Add to message" }).click();
+    await page.getByRole("menuitem", { name: "Compare assistants…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Compare assistants" });
+    await dialog.getByRole("checkbox", { name: "Claude Code" }).click();
+    await dialog.getByRole("checkbox", { name: "Copilot CLI" }).click();
+    await dialog.getByRole("textbox", { name: "Prompt for every assistant" }).fill(PROMPT);
+    await dialog.getByRole("button", { name: "Compare" }).click();
+    const claude = page.getByRole("region", { name: "Claude Code" });
+    await claude.getByRole("button", { name: "Allow", exact: true }).click();
+    await expect(claude.getByRole("status")).toHaveText("Done");
+    await expect(page.getByRole("region", { name: "Copilot CLI" }).getByRole("status")).toHaveText(
+      "Done",
+    );
+    // Let the debounced session save land before quitting.
+    await page.waitForTimeout(1_000);
+  } finally {
+    // Quit without removing the user data, so the next launch is a restart.
+    await first.app.close().catch(() => undefined);
+  }
+
+  const second = await launchApp({ userDataDir: first.userDataDir });
+  try {
+    const { page } = second;
+    const banner = page.getByRole("region", { name: "Unfinished comparison" });
+    await expect(banner).toContainText("A comparison of 2 assistants");
+    await banner.getByRole("button", { name: "Reopen" }).click();
+
+    await expect(page.getByRole("main").getByText(PROMPT, { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Copilot CLI" }).getByRole("status")).toHaveText(
+      "Done",
+    );
+    await expect(
+      page.getByRole("region", { name: "Claude Code" }).getByText("0 files changed"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Discard all" }).click();
+    await expect(page.getByText("Discarded the comparison")).toBeVisible();
+    expect(git("worktree", "list", "--porcelain")).not.toContain("zenith/compare");
+    expect(git("branch", "--list", "zenith/*").trim()).toBe("");
+
+    await page.getByRole("button", { name: "Back to the conversation" }).click();
+    await expect(page.getByRole("region", { name: "Unfinished comparison" })).toHaveCount(0);
+  } finally {
+    await second.close();
+  }
+});

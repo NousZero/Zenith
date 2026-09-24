@@ -21,8 +21,11 @@ export interface LaunchedApp {
 // Launches the packaged app (npm run package must run first) with the stand-in CLIs on PATH
 // and a fresh, isolated user-data-dir so tests never share session state. The real-agent smoke
 // suite passes realClis to leave PATH alone, so the installed Claude Code, Gemini, and so on run.
-export async function launchApp(options: { realClis?: boolean } = {}): Promise<LaunchedApp> {
-  const userDataDir = mkdtempSync(join(tmpdir(), "zenith-e2e-userdata-"));
+// Passing an earlier launch's userDataDir restarts the app on the same state.
+export async function launchApp(
+  options: { realClis?: boolean; userDataDir?: string } = {},
+): Promise<LaunchedApp> {
+  const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), "zenith-e2e-userdata-"));
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && key !== "ELECTRON_RUN_AS_NODE") env[key] = value;

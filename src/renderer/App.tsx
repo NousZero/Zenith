@@ -83,8 +83,10 @@ import {
 } from "./Workbench";
 import { ReviewBar, TodoStrip } from "./AgentPanel";
 import type {
+  Comparison,
   ConnectionStatus,
   ImageAttachment,
+  PaneState,
   PermissionRequest,
   PersonaFile,
   SessionState,
@@ -105,6 +107,29 @@ import {
   useHarness,
   type PaneDefaults,
 } from "./useHarness";
+
+// Rebuilds the comparison view from what survives a restart: the stored comparison, and this
+// session's panes working in its worktrees. Null when none of its runs are in this session.
+function reopenComparison(
+  comparison: Comparison,
+  sessionId: string,
+  panes: PaneState[],
+): ActiveComparison | null {
+  const runPanes = comparison.runs.flatMap((run) => {
+    const pane = panes.find((item) => item.projectPath === run.path);
+    return pane ? [{ providerId: run.providerId, pane }] : [];
+  });
+  const first = runPanes[0]?.pane;
+  if (!first) return null;
+  return {
+    ...comparison,
+    sessionId,
+    // Every run was sent the same prompt as its first message.
+    prompt: first.messages.find((message) => message.role === "user")?.content ?? "",
+    paneIds: Object.fromEntries(runPanes.map((item) => [item.providerId, item.pane.id])),
+    outcome: null,
+  };
+}
 
 function folderLabel(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "No project folder";
@@ -186,6 +211,8 @@ export function App() {
   // The compare dialog's starting prompt while it is open, and the comparison under way.
   const [compareDraft, setCompareDraft] = useState<string | null>(null);
   const [comparison, setComparison] = useState<ActiveComparison | null>(null);
+  // Comparisons not yet kept or discarded, so one left open when Zenith quit can be reopened.
+  const [unfinished, setUnfinished] = useState<Comparison[]>([]);
   const { extras, setExtra } = useExtras();
   const {
     session,
@@ -264,6 +291,18 @@ export function App() {
       console.error(`Failed to run /${item.name}:`, error);
     }
   }
+
+  // Re-read whenever a comparison starts, ends, or the session changes.
+  useEffect(() => {
+    let cancelled = false;
+    window.zenith.compare
+      .unfinished()
+      .then((list) => !cancelled && setUnfinished(list))
+      .catch((error: unknown) => console.error("Failed to list unfinished comparisons:", error));
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id, comparison]);
 
   useEffect(() => {
     void Promise.all([window.zenith.persona.get("SOUL.md"), window.zenith.persona.get("USER.md")])
@@ -927,6 +966,11 @@ export function App() {
   const paneTurn = pane ? agentTurns[pane.id] : undefined;
   const activeComparison = comparison?.sessionId === session.id ? comparison : null;
   const comparisonPaneIds = new Set(Object.values(activeComparison?.paneIds ?? {}));
+  const reopenable = activeComparison
+    ? null
+    : (unfinished
+        .map((item) => reopenComparison(item, session.id, session.panes))
+        .find((item) => item !== null) ?? null);
   const workspaceView = activeComparison ? (
     <CompareView
       comparison={activeComparison}
@@ -1037,6 +1081,23 @@ export function App() {
             }}
           />
         )}
+
+      {reopenable && (
+        <div
+          role="region"
+          aria-label="Unfinished comparison"
+          className="mx-auto mb-1 flex w-[calc(100%-2rem)] max-w-[calc(48rem-2rem)] items-center gap-2 rounded-lg border border-primary/30 bg-primary/[0.07] px-3 py-2 text-xs"
+        >
+          <Columns3 className="size-3.5 shrink-0 text-primary" aria-hidden />
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            A comparison of {reopenable.runs.length} assistants is waiting for you to keep one
+            result or discard them all.
+          </span>
+          <Button size="xs" onClick={() => setComparison(reopenable)}>
+            Reopen
+          </Button>
+        </div>
+      )}
 
       <Composer
         onControlsSlot={setComposerControls}

@@ -199,6 +199,17 @@ const MIGRATIONS: readonly string[] = [
     outcome TEXT NOT NULL
   );
   `,
+  // Side-by-side comparisons not yet kept or discarded, so one can still be kept after a restart.
+  // runs is the JSON list of each assistant's provider id, branch and worktree folder.
+  `
+  CREATE TABLE comparisons (
+    id TEXT PRIMARY KEY,
+    project_path TEXT NOT NULL,
+    base TEXT NOT NULL,
+    runs TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

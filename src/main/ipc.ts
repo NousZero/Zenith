@@ -174,7 +174,7 @@ export function registerIpcHandlers(options: {
     () => childProcessEnv(),
   );
   const gitWorkspace = createGitWorkspace(git);
-  const comparisons = createComparisons(git);
+  const comparisons = createComparisons(git, db);
   const snapshots = createSnapshotStore({
     db,
     git,
@@ -824,6 +824,7 @@ export function registerIpcHandlers(options: {
     });
     return leftovers;
   });
+  handle("compare:unfinished", async () => comparisons.unfinished());
   handle("compare:leftovers", async (_event, projectPath: unknown) =>
     comparisons.leftovers(await projectArg(projectPath)),
   );

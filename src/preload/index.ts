@@ -194,6 +194,7 @@ const zenithApi: ZenithApi = {
       ipcRenderer.invoke("compare:keep", { projectPath, id, providerId }),
     discard: (projectPath: string, id: string): Promise<string[]> =>
       ipcRenderer.invoke("compare:discard", { projectPath, id }),
+    unfinished: (): Promise<Comparison[]> => ipcRenderer.invoke("compare:unfinished"),
     leftovers: (projectPath: string): Promise<{ id: string; paths: string[] }[]> =>
       ipcRenderer.invoke("compare:leftovers", projectPath),
   },

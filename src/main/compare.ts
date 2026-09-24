@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 
 import type { Comparison, ComparisonFile, GitWorktree } from "../shared/types";
 import { createGitWorkspace, type GitRunner } from "./git";
@@ -35,12 +36,24 @@ export function runSlug(providerId: string): string {
   return slug || "assistant";
 }
 
-export function createComparisons(git: GitRunner) {
+export function createComparisons(git: GitRunner, db: DatabaseSync) {
   const workspace = createGitWorkspace(git);
-  // Base commits of comparisons started since launch. Keep needs one; after a restart an
-  // unfinished comparison can only be discarded.
-  // ponytail: in memory only; persist it if keeping after a restart is ever needed.
-  const bases = new Map<string, { projectPath: string; base: string }>();
+  // Comparisons not yet kept or discarded. Keep needs the base commit, and the window needs the
+  // runs to reopen the comparison, so both are stored and survive a restart.
+  const statements = {
+    byId: db.prepare("SELECT project_path, base FROM comparisons WHERE id = ?"),
+    list: db.prepare("SELECT id, project_path, base, runs FROM comparisons ORDER BY created_at"),
+    insert: db.prepare(
+      "INSERT INTO comparisons (id, project_path, base, runs, created_at) VALUES (?, ?, ?, ?, ?)",
+    ),
+    remove: db.prepare("DELETE FROM comparisons WHERE id = ?"),
+  };
+  interface Row {
+    id: string;
+    project_path: string;
+    base: string;
+    runs: string;
+  }
 
   // A comparison's worktrees, read from Git itself so the window never names a folder or branch.
   async function runsOf(projectPath: string, id: string): Promise<GitWorktree[]> {
@@ -50,8 +63,8 @@ export function createComparisons(git: GitRunner) {
   }
 
   async function runOf(projectPath: string, id: string, providerId: string) {
-    const known = bases.get(id);
-    if (!known || known.projectPath !== projectPath) {
+    const known = statements.byId.get(id) as Pick<Row, "project_path" | "base"> | undefined;
+    if (!known || known.project_path !== projectPath) {
       throw new Error("This comparison isn't running any more. Discard it and start again.");
     }
     const branch = `${BRANCH_PREFIX}${id}/${runSlug(providerId)}`;
@@ -75,7 +88,7 @@ export function createComparisons(git: GitRunner) {
         leftovers.push(`branch ${run.branch}`),
       );
     }
-    bases.delete(id);
+    statements.remove.run(id);
     return leftovers;
   }
 
@@ -101,7 +114,6 @@ export function createComparisons(git: GitRunner) {
         })
       ).trim();
       const id = randomBytes(4).toString("hex");
-      bases.set(id, { projectPath, base });
       const runs: Comparison["runs"] = [];
       try {
         for (const providerId of providerIds) {
@@ -113,6 +125,7 @@ export function createComparisons(git: GitRunner) {
         await discard(projectPath, id);
         throw error;
       }
+      statements.insert.run(id, projectPath, base, JSON.stringify(runs), Date.now());
       return { id, projectPath, base, runs };
     },
 
@@ -179,12 +192,25 @@ export function createComparisons(git: GitRunner) {
 
     discard,
 
+    // Comparisons still waiting for keep or discard, including ones from before a restart.
+    unfinished(): Comparison[] {
+      return (statements.list.all() as unknown as Row[]).map((row) => ({
+        id: row.id,
+        projectPath: row.project_path,
+        base: row.base,
+        runs: JSON.parse(row.runs) as Comparison["runs"],
+      }));
+    },
+
+    // Worktrees of comparisons Zenith has no record of, e.g. from a start cut short by a quit.
+    // ponytail: a recorded comparison whose session was deleted is neither reopened nor listed
+    // here; list recorded ones too, marked as such, if that turns up.
     async leftovers(projectPath: string): Promise<{ id: string; paths: string[] }[]> {
       const found = new Map<string, string[]>();
       for (const worktree of await workspace.worktrees(projectPath)) {
         if (!worktree.branch.startsWith(BRANCH_PREFIX)) continue;
         const id = worktree.branch.slice(BRANCH_PREFIX.length).split("/")[0] ?? "";
-        if (!COMPARISON_ID.test(id) || bases.has(id)) continue;
+        if (!COMPARISON_ID.test(id) || statements.byId.get(id)) continue;
         found.set(id, [...(found.get(id) ?? []), worktree.path]);
       }
       return [...found].map(([id, paths]) => ({ id, paths }));

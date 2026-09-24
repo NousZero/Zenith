@@ -3,9 +3,11 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createComparisons, runSlug } from "../../src/main/compare";
+import { openDatabase } from "../../src/main/database";
 import { createGitRunner } from "../../src/main/git";
 
 const env = () => ({
@@ -21,6 +23,7 @@ const git = createGitRunner(async () => "git", env);
 describe("side-by-side comparisons", () => {
   let dir: string;
   let project: string;
+  let db: DatabaseSync;
   const run = (...args: string[]) =>
     execFileSync("git", args, { cwd: project, env: { ...process.env, ...env() } }).toString();
 
@@ -33,9 +36,11 @@ describe("side-by-side comparisons", () => {
     run("-c", "init.defaultBranch=main", "init", "-q");
     run("add", "-A");
     run("commit", "-q", "-m", "first");
+    db = openDatabase(join(dir, "zenith.db"));
   });
 
   afterEach(async () => {
+    db.close();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -46,7 +51,7 @@ describe("side-by-side comparisons", () => {
   });
 
   it("creates one worktree per assistant from HEAD, keeps one, and removes them all", async () => {
-    const comparisons = createComparisons(git);
+    const comparisons = createComparisons(git, db);
     const base = run("rev-parse", "HEAD").trim();
     const started = await comparisons.start(project, ["claude-code", "gemini-cli"]);
 
@@ -96,7 +101,7 @@ describe("side-by-side comparisons", () => {
   });
 
   it("refuses to start in a dirty project or outside Git", async () => {
-    const comparisons = createComparisons(git);
+    const comparisons = createComparisons(git, db);
     await writeFile(join(project, "README.md"), "# edited\n");
     await expect(comparisons.start(project, ["claude-code", "gemini-cli"])).rejects.toThrow(
       /uncommitted changes/,
@@ -111,7 +116,7 @@ describe("side-by-side comparisons", () => {
   });
 
   it("refuses to keep when the project is dirty or has moved, and discard cleans up", async () => {
-    const comparisons = createComparisons(git);
+    const comparisons = createComparisons(git, db);
     const started = await comparisons.start(project, ["claude-code", "copilot-cli"]);
     const claude = started.runs[0];
     if (!claude) throw new Error("Expected a run.");
@@ -138,16 +143,54 @@ describe("side-by-side comparisons", () => {
     await expect(comparisons.discard(project, "../../x")).rejects.toThrow(/isn't a comparison/);
   });
 
-  it("finds worktrees an earlier run of Zenith left behind", async () => {
-    const started = await createComparisons(git).start(project, ["claude-code", "gemini-cli"]);
-    // A fresh instance stands in for Zenith after a restart.
-    const restarted = createComparisons(git);
-    const leftovers = await restarted.leftovers(project);
+  it("keeps or discards a comparison started before a restart", async () => {
+    const kept = await createComparisons(git, db).start(project, ["claude-code", "gemini-cli"]);
+    const [claude] = kept.runs;
+    if (!claude) throw new Error("Expected a run.");
+    await writeFile(join(claude.path, "README.md"), "# from claude\n");
+
+    // A reopened database and a fresh instance stand in for Zenith after a restart.
+    db.close();
+    db = openDatabase(join(dir, "zenith.db"));
+    const restarted = createComparisons(git, db);
+    expect(restarted.unfinished()).toEqual([kept]);
+    // Zenith still knows these worktrees, so they aren't offered for removal as leftovers.
+    expect(await restarted.leftovers(project)).toEqual([]);
+    expect((await restarted.changes(project, kept.id, "claude-code")).map((f) => f.path)).toEqual([
+      "README.md",
+    ]);
+    expect(await restarted.keep(project, kept.id, "claude-code")).toEqual({
+      applied: 1,
+      leftovers: [],
+    });
+    expect(await readFile(join(project, "README.md"), "utf8")).toBe("# from claude\n");
+    expect(kept.runs.every((item) => !existsSync(item.path))).toBe(true);
+    expect(restarted.unfinished()).toEqual([]);
+
+    run("commit", "-q", "-m", "kept claude");
+    const dropped = await restarted.start(project, ["claude-code", "copilot-cli"]);
+    db.close();
+    db = openDatabase(join(dir, "zenith.db"));
+    const again = createComparisons(git, db);
+    expect(again.unfinished().map((item) => item.id)).toEqual([dropped.id]);
+    expect(await again.discard(project, dropped.id)).toEqual([]);
+    expect(dropped.runs.every((item) => !existsSync(item.path))).toBe(true);
+    expect(run("branch", "--list", "zenith/*").trim()).toBe("");
+    expect(again.unfinished()).toEqual([]);
+    expect(await readFile(join(project, "README.md"), "utf8")).toBe("# from claude\n");
+  });
+
+  it("finds worktrees Zenith has no record of, and can only discard them", async () => {
+    const started = await createComparisons(git, db).start(project, ["claude-code", "gemini-cli"]);
+    // As if the start was cut short by a quit before it was recorded.
+    db.exec("DELETE FROM comparisons");
+    const comparisons = createComparisons(git, db);
+    const leftovers = await comparisons.leftovers(project);
     expect(leftovers.map((item) => [item.id, item.paths.length])).toEqual([[started.id, 2]]);
-    await expect(restarted.keep(project, started.id, "claude-code")).rejects.toThrow(
+    await expect(comparisons.keep(project, started.id, "claude-code")).rejects.toThrow(
       /isn't running any more/,
     );
-    expect(await restarted.discard(project, started.id)).toEqual([]);
-    expect(await restarted.leftovers(project)).toEqual([]);
+    expect(await comparisons.discard(project, started.id)).toEqual([]);
+    expect(await comparisons.leftovers(project)).toEqual([]);
   });
 });

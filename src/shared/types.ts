@@ -514,7 +514,9 @@ export interface ZenithApi {
       providerId: string,
     ): Promise<{ applied: number; leftovers: string[] }>;
     discard(projectPath: string, id: string): Promise<string[]>;
-    // Worktrees of earlier comparisons that were never kept or discarded, e.g. after a quit.
+    // Comparisons not yet kept or discarded, including ones started before a restart.
+    unfinished(): Promise<Comparison[]>;
+    // Worktrees of comparisons Zenith has no record of, e.g. from a start cut short by a quit.
     leftovers(projectPath: string): Promise<{ id: string; paths: string[] }[]>;
   };
   // A real terminal (pseudo-terminal) running the user's shell in a project folder.
