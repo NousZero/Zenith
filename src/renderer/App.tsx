@@ -45,12 +45,7 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { Composer, COMPOSER_INPUT_ID } from "./Composer";
 import { CompareDialog, CompareView, type ActiveComparison } from "./Compare";
 import { HistoryDialog, type AskTarget, type HistoryTab } from "./HistoryDialog";
-import {
-  LibraryBrowser,
-  LibraryDialog,
-  type LibraryDialogState,
-  type LibraryDraft,
-} from "./LibraryDialog";
+import { LibraryDialog, type LibraryDialogState, type LibraryDraft } from "./LibraryDialog";
 import { EmptyState } from "./EmptyState";
 import { useExtras } from "./extras";
 import { FilesView } from "./FilesView";
@@ -58,24 +53,11 @@ import { GoalsView } from "./GoalsView";
 import { leftoverNotice } from "./lib/format";
 import { MemoryPopover } from "./MemoryPopover";
 import { Pane } from "./Pane";
-import { cn } from "./lib/utils";
-import {
-  AppearanceSection,
-  ConnectionsSection,
-  ExtrasSection,
-  McpSection,
-  PermissionsSection,
-  PersonaFileEditor,
-  ProvidersSection,
-  SandboxSection,
-  AuditSection,
-  ErrorLogSection,
-} from "./SettingsSections";
+import { SettingsDialog, type AgentBehaviourSection, type SettingsTab } from "./SettingsDialog";
 import {
   ActivityRail,
   BottomDock,
   PageHeader,
-  RolePage,
   RunInspector,
   TopBar,
   type ActivityId,
@@ -135,26 +117,6 @@ function folderLabel(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? "No project folder";
 }
 
-const SETTINGS_TABS = [
-  { id: "general", label: "General" },
-  { id: "assistants", label: "Assistants" },
-  { id: "agent-behaviour", label: "Agent behaviour" },
-  { id: "safety", label: "Safety" },
-] as const;
-type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
-
-// The library and editor sections gathered under the Agent behaviour tab.
-// Each is a long list with its own editor, so they get a sub-nav rather
-// than stacking on one page.
-const AGENT_BEHAVIOUR_SECTIONS = [
-  { id: "soul", label: "Soul" },
-  { id: "role", label: "Role" },
-  { id: "agents", label: "Agents" },
-  { id: "skills", label: "Skills" },
-  { id: "commands", label: "Commands" },
-] as const;
-type AgentBehaviourSection = (typeof AGENT_BEHAVIOUR_SECTIONS)[number]["id"];
-
 // Every place that used to call openSettings("<old tab id>") keeps working:
 // each old id still names a single destination, now expressed as a tab plus,
 // for the merged Agent behaviour tab, the sub-section to land on.
@@ -190,6 +152,7 @@ export function App() {
   const autoConfiguredSessionId = useRef<string | undefined>(undefined);
   const [restored, setRestored] = useState(false);
   const [activity, setActivity] = useState<ActivityId>("workspace");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   const [agentSection, setAgentSection] = useState<AgentBehaviourSection>("soul");
   const [dockOpen, setDockOpen] = useState(false);
@@ -320,6 +283,10 @@ export function App() {
         // Cmd/Ctrl+Shift+K is the review bar's Keep.
         event.preventDefault();
         setHistory({ tab: "search", query: "" });
+      } else if (event.key === ",") {
+        // Cmd+, opens Settings, as in every macOS app; Ctrl+, elsewhere.
+        event.preventDefault();
+        setSettingsOpen(true);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -541,7 +508,7 @@ export function App() {
     const target = SETTINGS_DESTINATIONS[destination];
     setSettingsTab(target.tab);
     if ("section" in target) setAgentSection(target.section);
-    setActivity("settings");
+    setSettingsOpen(true);
   };
 
   // Claude Code's own commands, run by the CLI without a model call.
@@ -914,26 +881,6 @@ export function App() {
     clearAgentCache();
     setLibraryVersion((value) => value + 1);
   };
-  const libraryKinds: Partial<Record<AgentBehaviourSection, LibraryItem["kind"]>> = {
-    agents: "agent",
-    skills: "skill",
-    commands: "command",
-  };
-  const libraryKind = settingsTab === "agent-behaviour" ? libraryKinds[agentSection] : undefined;
-  const settingsDescriptions: Record<SettingsTab, string> = {
-    general: "How Zenith looks, plus features outside the core loop.",
-    assistants: "AI tools on this computer and API providers with their own address and key.",
-    "agent-behaviour":
-      "Who every model is, the personality it follows, and the agents, skills, and commands it can use.",
-    safety: "How much agents may do on their own, the tools they can reach, and what they did.",
-  };
-  const agentSectionDescriptions: Record<AgentBehaviourSection, string> = {
-    soul: "Who every model is and what it knows about you, sent as the system prompt.",
-    role: "The personality this session follows, added after the soul and profile.",
-    agents: "Instructions and tool lists a pane can follow. Choose one from the pane's menu.",
-    skills: "Instructions you run with /name in the composer.",
-    commands: "Prompt templates you run with /name; $ARGUMENTS is replaced with what you type.",
-  };
 
   const sessionTitle = (
     <input
@@ -1119,10 +1066,6 @@ export function App() {
     </>
   );
 
-  const narrow = (children: React.ReactNode) => (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-5">{children}</div>
-  );
-
   const filesView = (
     <>
       <PageHeader
@@ -1165,144 +1108,6 @@ export function App() {
     </>
   );
 
-  const settingsView = (
-    <>
-      <PageHeader
-        eyebrow="Profiles and connections"
-        title="Settings"
-        description={
-          settingsTab === "agent-behaviour"
-            ? agentSectionDescriptions[agentSection]
-            : settingsDescriptions[settingsTab]
-        }
-      />
-      <div
-        role="tablist"
-        aria-label="Settings sections"
-        className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-card px-4"
-      >
-        {SETTINGS_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={settingsTab === tab.id}
-            onClick={() => setSettingsTab(tab.id)}
-            className={cn(
-              "-mb-px shrink-0 cursor-pointer border-b-2 px-2.5 py-2.5 text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              settingsTab === tab.id
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {settingsTab === "agent-behaviour" && (
-        <div
-          role="tablist"
-          aria-label="Agent behaviour sections"
-          className="flex shrink-0 gap-1 overflow-x-auto bg-card px-4 py-2"
-        >
-          {AGENT_BEHAVIOUR_SECTIONS.map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              role="tab"
-              aria-selected={agentSection === section.id}
-              onClick={() => setAgentSection(section.id)}
-              className={cn(
-                "shrink-0 cursor-pointer rounded-full border px-2.5 py-1 text-[12px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                agentSection === section.id
-                  ? "border-primary/60 bg-primary/[0.06] text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {section.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {libraryKind ? (
-        <div className="flex min-h-0 flex-1 flex-col p-5">
-          <LibraryBrowser
-            key={`${libraryKind}:${libraryKind === "skill" ? (skillDraft?.version ?? 0) : 0}`}
-            kind={libraryKind}
-            items={library}
-            onChanged={() => {
-              setSkillDraft(null);
-              refreshLibrary();
-            }}
-            {...(libraryKind === "skill" && skillDraft ? { initialDraft: skillDraft.draft } : {})}
-          />
-        </div>
-      ) : (
-        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
-          {settingsTab === "general" &&
-            narrow(
-              <>
-                <AppearanceSection />
-                <ExtrasSection
-                  extras={extras}
-                  onToggle={setExtra}
-                  onOpenBots={() => setBotsOpen(true)}
-                  onOpenSchedule={() => setScheduleOpen(true)}
-                  onOpenInsights={() => setHistory({ tab: "insights", query: "" })}
-                />
-              </>,
-            )}
-          {settingsTab === "assistants" &&
-            narrow(
-              <>
-                <ProvidersSection onChanged={() => setCredentialsVersion((value) => value + 1)} />
-                <ConnectionsSection
-                  connections={connections}
-                  refreshing={refreshingConnections}
-                  onRefresh={() => void refreshConnections()}
-                />
-              </>,
-            )}
-          {settingsTab === "agent-behaviour" &&
-            agentSection === "soul" &&
-            narrow(
-              <>
-                <PersonaFileEditor
-                  file="SOUL.md"
-                  title="Soul"
-                  description="Sent first to every conversation, before your profile, the session role, and memory."
-                  placeholder="e.g. You are a direct senior engineer. Match answer length to the question."
-                  text={persona["SOUL.md"]}
-                  onSave={savePersona}
-                />
-                <PersonaFileEditor
-                  file="USER.md"
-                  title="About you"
-                  description="What every model should know about you: role, preferences, projects. Agents can add to it with your approval."
-                  placeholder="e.g. I'm a TypeScript developer on macOS. I prefer short answers with code."
-                  text={persona["USER.md"]}
-                  onSave={savePersona}
-                />
-              </>,
-            )}
-          {settingsTab === "agent-behaviour" && agentSection === "role" && (
-            <RolePage personalityId={session.personalityId} onChange={setPersonality} />
-          )}
-          {settingsTab === "safety" &&
-            narrow(
-              <>
-                <PermissionsSection onChanged={() => setGuardVersion((value) => value + 1)} />
-                <SandboxSection />
-                <McpSection />
-                <AuditSection />
-                <ErrorLogSection />
-              </>,
-            )}
-        </div>
-      )}
-    </>
-  );
-
   return (
     <TooltipProvider delayDuration={300}>
       <div className="grid h-screen grid-cols-[224px_minmax(0,1fr)] grid-rows-[52px_minmax(0,1fr)_auto] overflow-hidden bg-background text-foreground">
@@ -1312,9 +1117,7 @@ export function App() {
               ? ["Workspace", session.name || UNTITLED_SESSION]
               : activity === "files"
                 ? ["Files", folderLabel(dockProjectPath ?? "")]
-                : activity === "goals"
-                  ? ["Goals"]
-                  : ["Settings", SETTINGS_TABS.find((tab) => tab.id === settingsTab)?.label ?? ""]
+                : ["Goals"]
           }
           streaming={streamingPaneIds.size > 0}
           dockOpen={dockOpen}
@@ -1357,6 +1160,7 @@ export function App() {
           onOpenHistory={() => setHistory({ tab: "search", query: "" })}
           onOpenSchedule={() => setScheduleOpen(true)}
           onOpenBots={() => setBotsOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
           extras={extras}
         />
 
@@ -1365,7 +1169,7 @@ export function App() {
             workspaceView
           ) : activity === "files" ? (
             filesView
-          ) : activity === "goals" ? (
+          ) : (
             <>
               <PageHeader
                 eyebrow="Kept between sessions"
@@ -1374,8 +1178,6 @@ export function App() {
               />
               <GoalsView />
             </>
-          ) : (
-            settingsView
           )}
         </main>
 
@@ -1404,6 +1206,34 @@ export function App() {
             setHistory(null);
             setActivity("workspace");
             void selectSession(id);
+          }}
+        />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          tab={settingsTab}
+          onTabChange={setSettingsTab}
+          section={agentSection}
+          onSectionChange={setAgentSection}
+          extras={extras}
+          onToggleExtra={setExtra}
+          onOpenBots={() => setBotsOpen(true)}
+          onOpenSchedule={() => setScheduleOpen(true)}
+          onOpenInsights={() => setHistory({ tab: "insights", query: "" })}
+          onProvidersChanged={() => setCredentialsVersion((value) => value + 1)}
+          connections={connections}
+          refreshingConnections={refreshingConnections}
+          onRefreshConnections={() => void refreshConnections()}
+          persona={persona}
+          onSavePersona={savePersona}
+          personalityId={session.personalityId}
+          onPersonalityChange={setPersonality}
+          onPermissionsChanged={() => setGuardVersion((value) => value + 1)}
+          library={library}
+          skillDraft={skillDraft}
+          onLibraryChanged={() => {
+            setSkillDraft(null);
+            refreshLibrary();
           }}
         />
         <BoardDialog projectPath={boardProject} onClose={() => setBoardProject(null)} />
