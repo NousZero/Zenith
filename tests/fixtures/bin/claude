@@ -6,6 +6,17 @@ const args = process.argv.slice(2);
 const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 if (args[0] === "--version") { console.log("2.1.275 (Claude Code)"); process.exit(0); }
 if (args[0] === "auth") { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
+// Without a project folder Claude Code chats: the prompt, with any earlier turns as a transcript,
+// arrives as plain text, and the reply says how many earlier messages it was given. Reading all
+// of stdin here leaves nothing for the scripted agent turn below, so it never starts.
+if (!args.includes("--input-format")) {
+  let input = "";
+  for await (const chunk of process.stdin) input += chunk;
+  const earlier = input.split("Reply to my latest message:")[0].match(/^<(user|assistant)>$/gm) ?? [];
+  const text = `Claude Code read ${earlier.length} earlier messages.`;
+  out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
+  out({ type: "result", subtype: "success", usage: { input_tokens: 40, output_tokens: 8 } });
+}
 
 const lines = createInterface({ input: process.stdin });
 let step = "prompt";

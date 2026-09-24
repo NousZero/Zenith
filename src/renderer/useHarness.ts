@@ -594,15 +594,19 @@ export function useHarness(
     [sendWithHistory],
   );
 
+  // switchTo moves the pane to another assistant first, so the same prompt and history go to the
+  // one the person picked instead of the one that failed.
   const retryPane = useCallback(
-    (paneId: string) => {
-      const pane = session.panes.find((candidate) => candidate.id === paneId);
+    (paneId: string, switchTo?: Partial<PaneState>) => {
+      const found = session.panes.find((candidate) => candidate.id === paneId);
+      const pane = found && { ...found, ...switchTo };
       const target = pane && retryTarget(pane.messages);
+      if (pane && switchTo) updatePane(paneId, switchTo);
       if (pane && target) {
         void sendWithHistory(pane, target.history, target.prompt, target.prompt, target.images);
       }
     },
-    [session.panes, sendWithHistory],
+    [session.panes, sendWithHistory, updatePane],
   );
 
   const undoPane = useCallback(

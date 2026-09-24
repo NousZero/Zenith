@@ -677,6 +677,13 @@ export function App() {
     setActivity("workspace");
   }
 
+  // Only on the person's click: nothing goes to an assistant they didn't pick. Zenith owns the
+  // conversation, so the failed prompt and its history go to the new one unchanged.
+  async function continueWith(paneId: string, connection: ConnectionStatus) {
+    const modelId = await defaultModelFor(connection);
+    if (modelId) retryPane(paneId, { providerId: connection.id, modelId, contextWindow: null });
+  }
+
   // Every run is a pane of this session working in its own worktree, hidden from the single-pane
   // view and left out of broadcasts; the comparison view shows them side by side.
   async function startComparison(providerIds: string[], prompt: string) {
@@ -1058,6 +1065,7 @@ export function App() {
             onRemove={() => removePane(pane.id)}
             onFixGates={(prompt) => sendToCurrent(prompt)}
             onRetry={() => retryPane(pane.id)}
+            onContinueWith={(connection) => void continueWith(pane.id, connection)}
             onUndo={() => undoPane(pane.id)}
             onRestore={(messageId) =>
               void restoreTo(pane.id, messageId).then((prompt) => {

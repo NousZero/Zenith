@@ -7,6 +7,13 @@ const out = (m) => process.stdout.write(`${JSON.stringify(m)}\n`);
 let input = "";
 process.stdin.on("data", (chunk) => (input += chunk));
 process.stdin.on("end", () => {
+  // ZENITH_FAKE_QUOTA=1 answers like a Gemini account that has run out, for the switch test.
+  if (process.env.ZENITH_FAKE_QUOTA === "1") {
+    const message = "You have exhausted your capacity on this model. Your quota will reset after 7h12m.";
+    out({ type: "result", status: "error", error: { message } });
+    process.exitCode = 1;
+    return;
+  }
   const reply =
     "VERDICT: findings\n\n- SEVERITY: high\n  WHERE: leak.ts:1\n  PROBLEM: An API key is committed in the source.\n  FIX: Read it from the environment instead.";
   for (const piece of reply.match(/.{1,30}/gs) ?? []) {

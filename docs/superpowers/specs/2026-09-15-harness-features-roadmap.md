@@ -494,3 +494,55 @@ other conversations to the pane's provider, which may be online; the switch says
   session store, and that the context inspector splits the notes out; an e2e test that seeds a
   past session with a distinctive fact, sends a matching prompt with recall off (the fact is not
   in "What the model saw") and on (it is, under its own part, and the turn shows the note).
+
+## Continue with another assistant after an account problem (implemented 2026-09-24)
+
+When a reply fails because of the account behind a tool or provider (out of quota or credit,
+rate-limited, unpaid, signed out, no key), the error card in the pane now offers to carry on
+elsewhere instead of making you switch assistants and retype.
+
+- `isAccountProblem` in `src/shared/account-problem.ts` tells these failures apart from others by
+  their wording. It grew out of the smoke suite's `ACCOUNT_PROBLEM` pattern, which now imports it,
+  and adds what Zenith and the tools actually say: "No API key configured for …", "usage limit
+  reached", "hit your limit", `rate_limit_error`, "credit balance", "Insufficient credits",
+  "payment required". A crash, an overloaded server or an unreadable image is not one.
+- The card shows **Continue with Claude Code** (the first other ready assistant) and, when there are
+  more, an **Another assistant** menu. A line under the error says the new assistant gets this
+  conversation, not the failed tool's own tool steps. Retry and Add API key stay as they were.
+- A click switches the pane's provider and model, then resends the failed prompt with the same
+  history through `retryPane`, which now takes the provider and model to switch to. Zenith owns the
+  conversation, so nothing is retyped and nothing is lost.
+- It never happens on its own: nothing is sent to an assistant the person didn't pick. API
+  providers aren't offered, because they need a model chosen first, and that choice sets what the
+  reply costs; they stay one pick away in the composer.
+- **Verified:** unit tests with real error strings from the code and the providers, and messages
+  that must not match. An e2e test runs a first turn on the stand-in Claude, switches to the
+  stand-in Gemini (which answers as an account out of quota when `ZENITH_FAKE_QUOTA=1`), clicks
+  Continue with Claude Code, and sees Claude's reply report the two earlier messages, with the
+  prompt shown once. `launchApp` takes extra environment variables for this.
+
+## Prompt caching for Anthropic requests (implemented 2026-09-24)
+
+Every turn resends the whole conversation, and the native agent resends it on every tool step, so
+Anthropic requests now mark what can be read back from Anthropic's prompt cache.
+
+- Two of the four allowed `cache_control: {type: "ephemeral"}` breakpoints: the system prompt, now
+  sent as one text block, which with the tools in front of it caches both; and the last block of
+  the last message. The next request repeats that prefix and adds one turn (or one tool step), and
+  Anthropic finds the earlier entry by looking back from the new breakpoint. That covers "the
+  message before the new turn" without spending a third breakpoint on it. No beta header is needed.
+- The helpers (`cachedSystem`, `withCacheBreakpoint`, `anthropicUsage`) live in
+  `src/main/providers/content.ts` and are used by the chat adapter (`providers/anthropic.ts`) and by
+  `anthropicModel` in `agent/models.ts`, which serves the native tool loop and the
+  Anthropic-compatible custom providers.
+- `TokenUsage` gains optional `cacheReadTokens` and `cacheWriteTokens`, filled from the response's
+  `cache_read_input_tokens` and `cache_creation_input_tokens` and summed across tool steps.
+  `inputTokens` still counts the whole prompt. The chat adapter now reports usage at all, which it
+  didn't before. The window doesn't show the cache counts yet.
+- OpenAI and OpenRouter need no change: OpenAI caches long prefixes by itself, and both get the
+  system prompt first and the history in order, the same on every turn.
+- Prompts under Anthropic's minimum cacheable length (about 1,024 tokens, more for some models)
+  simply aren't cached; nothing fails.
+- **Verified:** the adapter's unit tests check the breakpoints in the request body, that earlier
+  turns go unchanged, and the cache counts in the reported usage; the native agent's integration
+  test checks the breakpoints on a tool step and the summed cache counts.

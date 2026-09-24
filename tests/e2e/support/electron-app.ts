@@ -21,9 +21,10 @@ export interface LaunchedApp {
 // Launches the packaged app (npm run package must run first) with the stand-in CLIs on PATH
 // and a fresh, isolated user-data-dir so tests never share session state. The real-agent smoke
 // suite passes realClis to leave PATH alone, so the installed Claude Code, Gemini, and so on run.
-// Passing an earlier launch's userDataDir restarts the app on the same state.
+// Passing an earlier launch's userDataDir restarts the app on the same state; env adds variables
+// the stand-ins read, such as ZENITH_FAKE_QUOTA.
 export async function launchApp(
-  options: { realClis?: boolean; userDataDir?: string } = {},
+  options: { realClis?: boolean; userDataDir?: string; env?: Record<string, string> } = {},
 ): Promise<LaunchedApp> {
   const userDataDir = options.userDataDir ?? mkdtempSync(join(tmpdir(), "zenith-e2e-userdata-"));
   const env: Record<string, string> = {};
@@ -31,6 +32,7 @@ export async function launchApp(
     if (value !== undefined && key !== "ELECTRON_RUN_AS_NODE") env[key] = value;
   }
   if (!options.realClis) env["PATH"] = `${fixturesBin}${delimiter}${process.env["PATH"] ?? ""}`;
+  Object.assign(env, options.env);
 
   const app = await electron.launch({
     executablePath: require("electron") as string,

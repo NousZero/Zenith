@@ -1,5 +1,11 @@
 import type { ImageAttachment, TokenUsage } from "../../shared/types";
-import { anthropicContent, openAiContent } from "../providers/content";
+import {
+  anthropicContent,
+  anthropicUsage,
+  cachedSystem,
+  openAiContent,
+  withCacheBreakpoint,
+} from "../providers/content";
 import { asRecord } from "../cli/cli-adapter";
 import { readSseLines } from "../providers/sse";
 import type { ToolSpec } from "./tools";
@@ -207,7 +213,7 @@ export function anthropicModel(options: {
           model,
           max_tokens: ANTHROPIC_MAX_TOKENS,
           stream: true,
-          ...(system ? { system } : {}),
+          ...(system ? { system: cachedSystem(system) } : {}),
           ...(tools.length > 0
             ? {
                 tools: tools.map((tool) => ({
@@ -217,15 +223,16 @@ export function anthropicModel(options: {
                 })),
               }
             : {}),
-          messages: conversation,
+          // Each tool step resends the conversation plus its latest results, so the breakpoint
+          // lets every step after the first read the earlier ones from the cache.
+          messages: withCacheBreakpoint(conversation),
         }),
         ...(signal ? { signal } : {}),
       });
       if (!response.ok) throw await failure("Anthropic", response);
 
       let text = "";
-      let inputTokens = 0;
-      let outputTokens = 0;
+      let usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
       const blocks = new Map<number, ToolCall>();
       for await (const payload of readSseLines(response, signal)) {
         let event: Record<string, unknown> | undefined;
@@ -237,11 +244,7 @@ export function anthropicModel(options: {
         const type = event?.["type"];
         const index = Number(event?.["index"]) || 0;
         if (type === "message_start") {
-          const usage = asRecord(asRecord(event?.["message"])?.["usage"]);
-          inputTokens =
-            (Number(usage?.["input_tokens"]) || 0) +
-            (Number(usage?.["cache_read_input_tokens"]) || 0) +
-            (Number(usage?.["cache_creation_input_tokens"]) || 0);
+          usage = anthropicUsage(asRecord(asRecord(event?.["message"])?.["usage"]));
         } else if (type === "content_block_start") {
           const block = asRecord(event?.["content_block"]);
           if (block?.["type"] === "tool_use") {
@@ -261,7 +264,8 @@ export function anthropicModel(options: {
             if (call) call.arguments += String(delta["partial_json"] ?? "");
           }
         } else if (type === "message_delta") {
-          outputTokens = Number(asRecord(event?.["usage"])?.["output_tokens"]) || outputTokens;
+          const outputTokens = Number(asRecord(event?.["usage"])?.["output_tokens"]);
+          if (outputTokens) usage = { ...usage, outputTokens };
         } else if (type === "error") {
           throw new Error(
             `Anthropic error: ${String(asRecord(event?.["error"])?.["message"] ?? "unknown")}`,
@@ -272,7 +276,7 @@ export function anthropicModel(options: {
         turn: {
           text,
           toolCalls: [...blocks.entries()].sort(([a], [b]) => a - b).map(([, call]) => call),
-          usage: { inputTokens, outputTokens },
+          usage,
         },
       };
     },

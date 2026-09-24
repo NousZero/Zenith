@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+import { isAccountProblem } from "../../src/shared/account-problem";
 import { launchApp } from "../e2e/support/electron-app";
 import { createGitProject } from "../e2e/support/git-project";
 import { composer, reviewBar } from "../e2e/support/send-and-approve";
@@ -14,10 +15,6 @@ import { approveOnce } from "./approve";
 const TASK =
   "Create a new file named hello.txt in the project root containing exactly the text hi. " +
   "Do not create, modify, or delete any other file. Then reply with the single word done.";
-
-// Replies that mean the agent's account can't do the task (no entitlement, no quota, signed out).
-const ACCOUNT_PROBLEM =
-  /authori[sz](?:ed|ation)|credentials|quota|rate limit|sign in|log in|logged out|authenticat|subscription|billing|no longer supported|api key is missing/i;
 
 const AGENTS = [
   { providerId: "claude-code", binary: "claude", label: "Claude Code" },
@@ -91,7 +88,7 @@ for (const agent of AGENTS) {
       if (await stop.isVisible()) {
         const screen = await page.locator("body").innerText();
         test.skip(
-          ACCOUNT_PROBLEM.test(screen),
+          isAccountProblem(screen),
           `${agent.label} is waiting on its account: ${screen.match(/[^\n]*(?:429|quota|rate limit)[^\n]*/i)?.[0] ?? "quota"}`,
         );
       }
@@ -106,8 +103,8 @@ for (const agent of AGENTS) {
         const transcript = await page.getByRole("region", { name: "Conversation" }).innerText();
         // The account, not Zenith, refused: say so as a skip rather than a failure.
         test.skip(
-          ACCOUNT_PROBLEM.test(transcript),
-          `${agent.label} account problem: ${transcript.split("\n").find((line) => ACCOUNT_PROBLEM.test(line))}`,
+          isAccountProblem(transcript),
+          `${agent.label} account problem: ${transcript.split("\n").find((line) => isAccountProblem(line))}`,
         );
         throw new Error(
           `${agent.label} did not create hello.txt. Last reply:\n${transcript.slice(-600)}`,
