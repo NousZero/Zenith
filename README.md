@@ -10,7 +10,7 @@ a project folder, with approvals, sandboxing and undo around every one of them.
 It runs on your computer. Conversations, keys and settings stay in your user data folder, and
 Zenith uses the sign-ins the command-line tools already have instead of asking for new ones.
 
-![Zenith workspace — empty state with a first-run checklist](docs/images/workspace-empty.png)
+<!-- Screenshot to add: Zenith workspace — empty state with a first-run checklist -->
 
 ---
 
