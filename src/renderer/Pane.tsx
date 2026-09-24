@@ -1,5 +1,7 @@
 import {
   AlertCircle,
+  CheckCircle2,
+  Circle,
   ArrowDown,
   Ban,
   Bot,
@@ -72,6 +74,13 @@ import { DEFAULT_CLI_MODEL_ID, PROVIDERS, providerMeta, usesDefaultModel } from 
 const STICK_TO_BOTTOM_PX = 48;
 // Radix Select needs a value that is not a real model id.
 const CUSTOM_MODEL = "__custom__";
+
+// Small, safe first tasks that show the core loop: the agent reads, proposes, and you review.
+const FIRST_TASKS = [
+  "Explain how this project is organised",
+  "Find one bug and propose a fix",
+  "Add a short section to the README",
+] as const;
 
 function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
@@ -312,6 +321,8 @@ export function Pane(props: {
   controlsSlot?: HTMLElement | null;
   // Settings › Extras › Project board; the folder menu offers the board only when it's on.
   showProjectBoard?: boolean;
+  // Puts a suggested first task in the composer to edit or send.
+  onSuggest?(prompt: string): void;
   credentialsVersion: number;
   connections: ConnectionStatus[];
   streaming: boolean;
@@ -376,6 +387,7 @@ export function Pane(props: {
 
   const provider = providerMeta(pane.providerId);
   const isConfigured = connection?.state === "ready";
+  const readyCount = connections.filter((candidate) => candidate.state === "ready").length;
   const modelLabel = models.find((model) => model.id === pane.modelId)?.label ?? pane.modelId;
 
   // Whoever reviews the changes should not be the connection that made them; only fall back to it
@@ -817,7 +829,7 @@ export function Pane(props: {
               <EmptyState
                 icon={Sparkles}
                 title="Pick a model"
-                description="Choose a model from the header to start this conversation."
+                description="Choose a model in the chat box below to start this conversation."
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-5 px-6 py-10 text-center">
@@ -830,6 +842,85 @@ export function Pane(props: {
                 <p className="font-serif text-2xl font-semibold tracking-tight text-foreground">
                   What are we working on?
                 </p>
+                {/* First run: the core loop in three steps, each ticked off as it's done. */}
+                <ol
+                  aria-label="Get started"
+                  className="flex w-full max-w-md flex-col gap-3 rounded-xl border border-border bg-card p-4 text-left text-[13px]"
+                >
+                  <li className="flex items-start gap-3">
+                    <CheckCircle2
+                      className="mt-0.5 size-4 shrink-0 text-success"
+                      aria-label="Done"
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="font-medium">{provider.label} is ready</span>
+                      <span className="text-xs text-muted-foreground">
+                        {readyCount > 1
+                          ? `${readyCount - 1} more ${readyCount - 1 === 1 ? "assistant is" : "assistants are"} ready; switch in the chat box.`
+                          : "Add more assistants any time."}
+                      </span>
+                    </span>
+                    <Button size="xs" variant="ghost" onClick={props.onOpenSettings}>
+                      Manage
+                    </Button>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    {pane.projectPath ? (
+                      <CheckCircle2
+                        className="mt-0.5 size-4 shrink-0 text-success"
+                        aria-label="Done"
+                      />
+                    ) : (
+                      <Circle
+                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        aria-label="To do"
+                      />
+                    )}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="font-medium">
+                        {pane.projectPath
+                          ? `Working in ${folderName(pane.projectPath)}`
+                          : "Choose a project folder"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Agents read it freely and ask before every change.
+                      </span>
+                    </span>
+                    {!pane.projectPath && (
+                      <Button size="xs" onClick={() => void chooseProject()}>
+                        <FolderOpen />
+                        Choose
+                      </Button>
+                    )}
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <Circle
+                      className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                      aria-label="To do"
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      <span className="font-medium">Try a first task</span>
+                      {pane.projectPath && props.onSuggest ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          {FIRST_TASKS.map((task) => (
+                            <button
+                              key={task}
+                              type="button"
+                              onClick={() => props.onSuggest?.(task)}
+                              className="cursor-pointer rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              {task}
+                            </button>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Ask in the chat box below. You review every change before keeping it.
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                </ol>
                 <ul className="flex max-w-md flex-col gap-2 text-left text-xs text-muted-foreground">
                   <li className="flex items-baseline gap-2.5">
                     <kbd className="w-9 shrink-0 rounded border border-border px-1 text-center font-mono text-[10px]">
@@ -842,14 +933,6 @@ export function Pane(props: {
                       {navigator.userAgent.includes("Mac") ? "⌘K" : "Ctrl K"}
                     </kbd>
                     Search or ask about every past session.
-                  </li>
-                  <li className="flex items-baseline gap-2.5">
-                    <span className="flex w-9 shrink-0 translate-y-0.5 justify-center">
-                      <FolderOpen className="size-3.5 text-primary" aria-hidden />
-                    </span>
-                    {pane.projectPath
-                      ? `Working in ${folderName(pane.projectPath)}. Agents read it freely and ask before every change.`
-                      : "Choose a project folder above so agents can read and change its files, with your approval."}
                   </li>
                 </ul>
               </div>

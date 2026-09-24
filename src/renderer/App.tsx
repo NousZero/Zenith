@@ -870,6 +870,10 @@ export function App() {
             pane={pane}
             controlsSlot={composerControls}
             showProjectBoard={extras.projectBoard}
+            onSuggest={(prompt) => {
+              setComposerPrompt(prompt);
+              document.getElementById(COMPOSER_INPUT_ID)?.focus();
+            }}
             singlePane
             credentialsVersion={credentialsVersion}
             connections={connections}
