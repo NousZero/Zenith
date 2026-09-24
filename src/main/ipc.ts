@@ -9,6 +9,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
+import { geminiKeyEnv, geminiSignIn } from "./cli/gemini-key";
 import { execFileResolved } from "./cli/launch";
 import { existsSync, mkdirSync } from "node:fs";
 import { access, readFile, stat, writeFile } from "node:fs/promises";
@@ -462,7 +463,14 @@ export function registerIpcHandlers(options: {
   const cliAcpAdapters: typeof agentAdapters = [];
   const cliAgent = (chat: ProviderAdapter, id: keyof typeof CLI_AGENT_ARGS, label: string) => {
     const agent = createAcpAdapter(
-      { id, label, args: [...CLI_AGENT_ARGS[id]] },
+      {
+        id,
+        label,
+        args: [...CLI_AGENT_ARGS[id]],
+        ...(id === "gemini-cli"
+          ? { env: () => geminiKeyEnv(homedir(), process.env), signIn: geminiSignIn }
+          : {}),
+      },
       acpDeps(CLI_BINARIES[id]),
     );
     cliAcpAdapters.push(agent);

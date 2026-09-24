@@ -23,8 +23,12 @@ export interface AcpAgentSpec {
   id: string;
   label: string;
   args: string[];
-  // Extra environment for the agent, e.g. OpenCode permission rules.
-  env?: NodeJS.ProcessEnv;
+  // Extra environment for the agent, e.g. OpenCode permission rules; a function is read at each
+  // launch, for values that can change while Zenith runs (Gemini's key file).
+  env?: NodeJS.ProcessEnv | (() => NodeJS.ProcessEnv);
+  // The sign-in method to use right after initialize, given the agent's environment, when the
+  // agent needs telling (Gemini with an API key).
+  signIn?(env: NodeJS.ProcessEnv): string | undefined;
 }
 
 export interface AcpAdapterDeps {
@@ -155,11 +159,15 @@ export function createAcpAdapter(
   async function connect(): Promise<AcpConnection> {
     const binary = await deps.resolveBinary();
     if (!binary) throw new Error(`${spec.label} is not installed.`);
+    const env = {
+      ...deps.childEnv(binary),
+      ...(typeof spec.env === "function" ? spec.env() : spec.env),
+    };
     const conn = new AcpConnection({
       command: binary,
       args: spec.args,
       cwd: deps.cwd,
-      env: { ...deps.childEnv(binary), ...spec.env },
+      env,
     });
     conn.onNotification("session/update", (params) => {
       const update = asRecord(params["update"]);
@@ -202,12 +210,17 @@ export function createAcpAdapter(
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
         clientInfo: { name: "zenith", version: deps.clientVersion },
       });
+      const offered = (init.authMethods ?? [])
+        .map((method) => method.id)
+        .filter((id): id is string => typeof id === "string");
       signInMethods.set(
         conn,
-        (init.authMethods ?? [])
-          .map((method) => method.id)
-          .filter((id): id is string => typeof id === "string" && !/api.?key/i.test(id)),
+        offered.filter((id) => !/api.?key/i.test(id)),
       );
+      const preferred = spec.signIn?.(env);
+      if (preferred && offered.includes(preferred)) {
+        await conn.request("authenticate", { methodId: preferred });
+      }
     } catch (error) {
       conn.close();
       throw error;
