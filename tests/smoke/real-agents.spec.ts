@@ -16,7 +16,7 @@ const TASK =
 
 // Replies that mean the agent's account can't do the task (no entitlement, no quota, signed out).
 const ACCOUNT_PROBLEM =
-  /authori[sz](?:ed|ation)|credentials|quota|rate limit|sign in|log in|logged out|authenticat|subscription|billing/i;
+  /authori[sz](?:ed|ation)|credentials|quota|rate limit|sign in|log in|logged out|authenticat|subscription|billing|no longer supported|api key is missing/i;
 
 const AGENTS = [
   { providerId: "claude-code", binary: "claude", label: "Claude Code" },
@@ -59,6 +59,15 @@ for (const agent of AGENTS) {
       );
       await page.reload();
       await page.waitForLoadState("domcontentloaded");
+      // Zenith moves an empty conversation off an assistant it thinks isn't ready; the first
+      // smoke runs "passed" Gemini that way while Claude answered. Check who will answer.
+      const answering = await page.evaluate(async () => {
+        const [summary] = await window.zenith.sessions.list();
+        return summary && (await window.zenith.sessions.load(summary.id))?.panes[0]?.providerId;
+      });
+      expect(answering, `Zenith switched ${agent.label} to another assistant`).toBe(
+        agent.providerId,
+      );
 
       await composer(page).fill(TASK);
       await page.getByRole("button", { name: "Send" }).click();
@@ -74,6 +83,14 @@ for (const agent of AGENTS) {
           .getByRole("button", { name: "Allow", exact: true });
         if (await allow.isVisible()) await allow.first().click();
         await page.waitForTimeout(1_000);
+      }
+      // A stall notice that names a quota or sign-in problem is the account's, not Zenith's.
+      if (await stop.isVisible()) {
+        const screen = await page.locator("body").innerText();
+        test.skip(
+          ACCOUNT_PROBLEM.test(screen),
+          `${agent.label} is waiting on its account: ${screen.match(/[^\n]*(?:429|quota|rate limit)[^\n]*/i)?.[0] ?? "quota"}`,
+        );
       }
       expect(
         await stop.isVisible(),
