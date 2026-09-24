@@ -125,15 +125,15 @@ are already on the computer.
   tests) as the one local and CI contract; a Playwright end-to-end suite against the packaged app
   driven by stand-in CLIs (no real quota); a real-agent smoke suite run by hand before a release,
   against installed agents with real sign-ins and a little real quota; CI on every push to `main`
-  and every pull request, on Linux, macOS and Windows (Linux and macOS block, Windows is reported
-  only).
+  and every pull request, on Linux, macOS and Windows, all three blocking.
+- Side-by-side assistant comparison: one prompt to two or three assistants, each in its own Git
+  worktree from the last commit, shown in columns; keep one result (applied to the project,
+  staged, and refused if the project moved on) or discard them all.
 
 ### Next
 
-- **Side-by-side assistant comparison.** Send one prompt to two or more connections at once and
-  read their replies next to each other, so choosing between assistants doesn't mean copying a
-  prompt between separate windows. In active development.
-- Windows verified for day-to-day use, and signed packages for all three platforms.
+- Windows used day to day, and signed packages for all three platforms.
+- Comparisons that survive a restart (today an unfinished one can only be discarded after one).
 - Stall notices (the "why has it gone quiet" message) extended to Claude Code and the plain CLIs.
 
 ### Deliberately out of scope

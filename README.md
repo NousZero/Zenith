@@ -64,6 +64,12 @@ provider, model, folder and pane menu live in the chat box's controls row, not a
   composer.
 - **A pinned plan strip** above the composer while an agent works, expandable to the full list of
   steps with their status.
+- **Side-by-side comparison.** Compare assistants… in the composer's `+` menu (or `/compare`)
+  sends one prompt to two or three assistants. Each works in its own Git worktree cut from the last
+  commit, so they can't get in each other's way, and the results sit in columns with their status,
+  approvals, reply and changed files. **Keep this one** applies that assistant's changes to your
+  project, staged; **Discard all** leaves it unchanged. It needs a Git project with no uncommitted
+  changes, and Keep refuses if the project moved on meanwhile.
 
 ### Safety
 
@@ -195,8 +201,7 @@ CLI, Hermes — through one small task each with your own sign-ins and a little 
 by hand before a release, never in CI.
 
 CI (`.github/workflows/ci.yml`) runs `npm run verify` on every push to `main` and every pull
-request, on Linux, macOS and Windows — Linux and macOS block the build, Windows is reported but
-not yet blocking. A separate macOS job packages the app and runs the Playwright end-to-end suite.
+request, on Linux, macOS and Windows, and all three block the build. A separate macOS job packages the app and runs the Playwright end-to-end suite.
 
 ---
 
@@ -260,8 +265,8 @@ including the risks that are accepted rather than solved.
 - **Files written by CLI agents (Claude Code, Gemini CLI, Copilot CLI) are outside Zenith's
   control.** The audit log records the edits they report and the approvals given, not the bytes
   they wrote.
-- **Windows is not yet fully verified.** CI runs the full test contract on Windows, but it doesn't
-  block a push, and the app hasn't been used there day to day.
+- **Windows hasn't been used day to day.** CI runs and blocks on the full test contract there,
+  but no one has worked in the app on Windows yet.
 - **Stall notices cover ACP agents only.** Claude Code and the plain CLIs don't yet say why
   they've gone quiet.
 
@@ -278,5 +283,5 @@ MIT — see [`LICENSE`](LICENSE).
 
 Zenith is developed and tested on macOS (Apple silicon). The code is cross-platform, CI runs the
 full test contract on Linux, macOS and Windows on every push to `main`, and packaging targets all
-three — but only Linux and macOS block the build, Windows has not been used day to day, and
-packages are not signed. See [`PRD.md`](PRD.md) for what is finished and what is next.
+three and blocks on all three — but Windows has not been used day to day, and packages are not
+signed. See [`PRD.md`](PRD.md) for what is finished and what is next.
