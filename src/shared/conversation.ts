@@ -1,4 +1,4 @@
-import type { PaneMessage } from "./types";
+import type { PaneMessage, PaneState } from "./types";
 
 // The last user prompt and the history before it, so it can be sent again.
 export function retryTarget(
@@ -28,6 +28,36 @@ export function branchMessages(
 ): PaneMessage[] {
   const index = messages.findIndex((message) => message.id === messageId);
   return messages.slice(0, index + 1).map((message) => ({ ...message, id: newId() }));
+}
+
+// A pane's last cleanly finished turn, so the next turn can continue the agent's own session
+// instead of sending the whole conversation again.
+export interface LastTurn {
+  requestId: string;
+  providerId: string;
+  modelId: string;
+  projectPath: string | null;
+  // The pane's messages once the reply was added.
+  messageCount: number;
+  lastMessageId: string | undefined;
+}
+
+// The turn to continue from, when the pane uses the same connection, model and folder, and the
+// history about to be sent is exactly what that turn ended with. Undo, restore, retry, branch,
+// clearing, and switching provider all change one of these, so they start over with the transcript.
+export function resumeFrom(
+  last: LastTurn | undefined,
+  pane: Pick<PaneState, "providerId" | "modelId" | "projectPath">,
+  history: readonly PaneMessage[],
+): string | undefined {
+  return last !== undefined &&
+    last.providerId === pane.providerId &&
+    last.modelId === pane.modelId &&
+    last.projectPath === pane.projectPath &&
+    history.length === last.messageCount &&
+    history.at(-1)?.id === last.lastMessageId
+    ? last.requestId
+    : undefined;
 }
 
 const TITLE_MAX_LENGTH = 48;

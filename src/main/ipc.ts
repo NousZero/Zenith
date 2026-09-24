@@ -69,6 +69,7 @@ import {
   readWorkspaceFile,
 } from "./workspace";
 import { createProjectStore } from "./project-store";
+import { createAgentSessions } from "./cli/agent-sessions";
 import { createCliAdapter } from "./cli/cli-adapter";
 import {
   childProcessPath,
@@ -421,7 +422,12 @@ export function registerIpcHandlers(options: {
   });
 
   // With a project folder Claude Code runs as an agent; without one it stays a read-only chat.
-  const claudeCodeChat = createCliAdapter(claudeCodeSpec, cliDeps("claude-code"));
+  // Both continue a pane's Claude Code session while its conversation is unchanged.
+  const claudeCodeSessions = createAgentSessions();
+  const claudeCodeChat = createCliAdapter(claudeCodeSpec, {
+    ...cliDeps("claude-code"),
+    sessions: claudeCodeSessions,
+  });
   const claudeCode = {
     ...claudeCodeChat,
     sendMessage: (request: SendMessageRequest) =>
@@ -430,6 +436,7 @@ export function registerIpcHandlers(options: {
             { ...request, projectPath: request.projectPath },
             {
               ...cliDeps("claude-code"),
+              sessions: claudeCodeSessions,
               saveCheckpoint: projects.saveCheckpoint,
               syncTodos: projects.syncTodos,
               mcpConfigPath: mcp.claudeConfigPath,
@@ -1106,6 +1113,7 @@ export function registerIpcHandlers(options: {
         projectPath?: string | null;
         planMode?: boolean;
         allowedTools?: string[];
+        resumeFrom?: string;
       },
     ) => {
       const controller = new AbortController();
@@ -1135,16 +1143,19 @@ export function registerIpcHandlers(options: {
             )
           : payload.messages;
         // Recorded for the context inspector; a failure here never blocks the reply.
-        void describeContext({
-          providerId: payload.providerId,
-          modelId: payload.modelId,
-          messages: payload.messages,
-          projectPath,
-          planMode: payload.planMode === true,
-          allowedTools: Array.isArray(payload.allowedTools) ? payload.allowedTools : undefined,
-        })
-          .then((snapshot) => contextSnapshots.set(payload.paneId, snapshot))
-          .catch(() => undefined);
+        const describe = (resumed: boolean) =>
+          describeContext({
+            providerId: payload.providerId,
+            modelId: payload.modelId,
+            messages: payload.messages,
+            projectPath,
+            planMode: payload.planMode === true,
+            allowedTools: Array.isArray(payload.allowedTools) ? payload.allowedTools : undefined,
+            resumed,
+          })
+            .then((snapshot) => contextSnapshots.set(payload.paneId, snapshot))
+            .catch(() => undefined);
+        const described = describe(false);
         const requestPermission = (prompt: PermissionPrompt) =>
           new Promise<string | undefined>((resolve) => {
             if (controller.signal.aborted || event.sender.isDestroyed()) return resolve(undefined);
@@ -1195,6 +1206,7 @@ export function registerIpcHandlers(options: {
           signal: controller.signal,
           conversationId: payload.paneId,
           turnId: payload.requestId,
+          ...(typeof payload.resumeFrom === "string" ? { resumeFrom: payload.resumeFrom } : {}),
           ...(payload.planMode === true ? { planMode: true } : {}),
           ...(Array.isArray(payload.allowedTools)
             ? { allowedTools: payload.allowedTools.filter((tool) => typeof tool === "string") }
@@ -1203,7 +1215,13 @@ export function registerIpcHandlers(options: {
           requestPermission,
         })) {
           reply += chunk.delta;
-          if (chunk.done) recordUsage(payload, payload.messages, reply, chunk);
+          // A continued session was sent only the newest message, so an estimate counts only that.
+          if (chunk.done) {
+            const sent = chunk.resumed ? payload.messages.slice(-1) : payload.messages;
+            recordUsage(payload, sent, reply, chunk);
+          }
+          // Only now is it known that the agent continued its session and got the newest message.
+          if (chunk.resumed) void described.then(() => describe(true));
           const activity = chunk.activity;
           if (activity) {
             if (activity.checkpoint) changedFiles.set(activity.id, activity.title);

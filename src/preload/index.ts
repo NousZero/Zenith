@@ -312,6 +312,7 @@ const zenithApi: ZenithApi = {
       projectPath?: string | null;
       planMode?: boolean;
       allowedTools?: string[];
+      resumeFrom?: string;
     }): Promise<void> => ipcRenderer.invoke("chat:send", request),
     abort: (requestId: string): Promise<void> => ipcRenderer.invoke("chat:abort", requestId),
     complete: (request: {

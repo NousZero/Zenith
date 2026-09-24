@@ -5,10 +5,11 @@ import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runClaudeAgent } from "../../src/main/agent/claude-agent";
+import { createAgentSessions } from "../../src/main/cli/agent-sessions";
 import { openDatabase } from "../../src/main/database";
 import { parsePermissionRules } from "../../src/shared/permissions";
 import { createProjectStore } from "../../src/main/project-store";
-import type { ChatChunk, PermissionPrompt } from "../../src/shared/types";
+import type { ChatChunk, ChatMessage, PermissionPrompt } from "../../src/shared/types";
 import { launchable } from "../fixtures/windows-shim";
 
 const fakeClaude = launchable(join(import.meta.dirname, "..", "fixtures", "fake-claude-agent.mjs"));
@@ -146,6 +147,135 @@ describe("Claude Code agent mode", () => {
     const denied = await run("allow", "allow Edit *\ndeny Edit notes.*");
     expect(denied.prompts).toHaveLength(0);
     expect(await readFile(join(project, "notes.txt"), "utf8")).toBe("alpha\n");
+  });
+});
+
+describe("Claude Code agent mode continuing its session", () => {
+  let dir: string;
+  let project: string;
+  let db: DatabaseSync;
+  const sessions = createAgentSessions();
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "zenith-agent-resume-"));
+    project = join(dir, "project");
+    await import("node:fs/promises").then((fs) => fs.mkdir(project));
+    await writeFile(join(project, "notes.txt"), "alpha\n");
+    await chmod(fakeClaude, 0o755);
+    db = openDatabase(join(dir, "zenith.db"));
+  });
+
+  afterEach(async () => {
+    db.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function turn(
+    messages: ChatMessage[],
+    ids: { turnId: string; resumeFrom?: string },
+    env: Record<string, string> = {},
+  ) {
+    const store = createProjectStore(db);
+    const prompts: PermissionPrompt[] = [];
+    const chunks: ChatChunk[] = [];
+    for await (const chunk of runClaudeAgent(
+      {
+        model: "default",
+        messages,
+        projectPath: project,
+        conversationId: "pane-1",
+        ...ids,
+        requestPermission: async (prompt) => {
+          prompts.push(prompt);
+          return "allow";
+        },
+      },
+      {
+        resolveBinary: async () => fakeClaude,
+        childEnv: () => ({
+          PATH: process.env["PATH"] ?? "",
+          FAKE_CLAUDE_LOG: join(dir, "log.jsonl"),
+          ...env,
+        }),
+        saveCheckpoint: store.saveCheckpoint,
+        syncTodos: store.syncTodos,
+        mcpConfigPath: async () => undefined,
+        sessions,
+      },
+    )) {
+      chunks.push(chunk);
+    }
+    return { prompts, chunks, text: chunks.map((chunk) => chunk.delta).join("") };
+  }
+
+  async function log(): Promise<{ args: string[]; prompt: string; sessionId: string }[]> {
+    const text = await readFile(join(dir, "log.jsonl"), "utf8");
+    return text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { args: string[]; prompt: string; sessionId: string });
+  }
+
+  const first: ChatMessage[] = [
+    { role: "system", content: "Be terse." },
+    { role: "user", content: "append beta" },
+  ];
+  const second: ChatMessage[] = [
+    ...first,
+    { role: "assistant", content: "Edited." },
+    { role: "user", content: "and again" },
+  ];
+
+  it("continues the session with only the new message, still asking before edits", async () => {
+    await turn(first, { turnId: "t1" });
+    const { prompts, chunks } = await turn(second, { turnId: "t2", resumeFrom: "t1" });
+
+    const [one, two] = await log();
+    // The first turn is saved so it can be continued, and the second continues it.
+    expect(one?.args).not.toContain("--no-session-persistence");
+    expect(one?.args.some((arg) => arg.startsWith("--resume"))).toBe(false);
+    expect(two?.args).toContain(`--resume=${one?.sessionId}`);
+    expect(two?.prompt).toBe("and again");
+    // Same tools, permission prompts, and instructions as the first turn.
+    expect(two?.args).toEqual(expect.arrayContaining(["--permission-prompt-tool", "stdio"]));
+    expect(two?.args.find((arg) => arg.startsWith("--append-system-prompt="))).toContain(
+      "Be terse.",
+    );
+    expect(prompts).toHaveLength(1);
+    expect(chunks.at(-1)).toMatchObject({ done: true, resumed: true });
+
+    // A third turn that doesn't name the second starts over with the whole transcript.
+    await turn(second, { turnId: "t3" });
+    const three = (await log())[2];
+    expect(three?.args.some((arg) => arg.startsWith("--resume"))).toBe(false);
+    expect(three?.prompt).toContain("Here is our conversation so far");
+  });
+
+  it("starts over when the instructions changed", async () => {
+    await turn(first, { turnId: "t1" });
+    const changed = second.map((message) =>
+      message.role === "system" ? { ...message, content: "Be chatty." } : message,
+    );
+    await turn(changed, { turnId: "t2", resumeFrom: "t1" });
+    const two = (await log())[1];
+    expect(two?.args.some((arg) => arg.startsWith("--resume"))).toBe(false);
+    expect(two?.prompt).toContain("Here is our conversation so far");
+  });
+
+  it("sends the whole transcript in the same turn when the session can't be resumed", async () => {
+    await turn(first, { turnId: "t1" });
+    const { text, chunks } = await turn(
+      second,
+      { turnId: "t2", resumeFrom: "t1" },
+      { FAKE_CLAUDE_FAIL_RESUME: "1" },
+    );
+    expect(text).toBe("Edited.");
+    expect(chunks.at(-1)?.resumed).toBeUndefined();
+    // The refused resume exits before reading a prompt, so only the replay is logged.
+    const [, two] = await log();
+    expect(two?.args.some((arg) => arg.startsWith("--resume"))).toBe(false);
+    expect(two?.prompt).toContain("Here is our conversation so far");
+    expect(two?.prompt).toContain("<user>\nand again\n</user>");
   });
 });
 

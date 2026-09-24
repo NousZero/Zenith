@@ -1,10 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
-
 import type {
   AgentActivity,
   AgentTodo,
   ChatChunk,
-  ChatMessage,
   Model,
   PermissionChoice,
   PermissionPrompt,
@@ -12,12 +9,15 @@ import type {
   SendMessageRequest,
   TokenUsage,
 } from "../../shared/types";
+import { resumeOrReplay } from "../cli/agent-sessions";
 import { asRecord, DEFAULT_MODEL_ID } from "../cli/cli-adapter";
 import { assertSafeModelId, buildCliPrompt, withSystemPreamble } from "../cli/transcript";
 import { withStallNotices } from "../cli/stall-notice";
 import { AcpConnection } from "./connection";
 
 const PROTOCOL_VERSION = 1;
+// How long an agent's process, and the sessions it keeps for panes, outlives the last turn.
+const IDLE_CLOSE_MS = 10 * 60_000;
 
 export interface AcpAgentSpec {
   id: string;
@@ -38,6 +38,8 @@ export interface AcpAdapterDeps {
   clientVersion: string;
   // The user's MCP servers in ACP's session/new shape.
   mcpServers(): Promise<unknown[]>;
+  // Shortened in tests.
+  idleCloseMs?: number;
 }
 
 interface NewSessionResult {
@@ -47,9 +49,11 @@ interface NewSessionResult {
 
 interface ConversationSession {
   sessionId: string;
+  // The pane's turn that left this session, which the pane's next turn names in resumeFrom.
+  turnId: string;
   modelId: string;
-  // Hash of every message the agent has seen in this session, including its last reply.
-  fingerprint: string;
+  // The instructions the session started with, sent at its start only.
+  system: string;
   cwd: string;
 }
 
@@ -103,11 +107,6 @@ export function toTaskEvent(
 }
 type Params = Record<string, unknown>;
 
-export function fingerprintMessages(messages: readonly ChatMessage[]): string {
-  const canonical = messages.map(({ role, content }) => [role, content]);
-  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-}
-
 const PERMISSION_KINDS = new Set<PermissionChoice["kind"]>([
   "allow_once",
   "allow_always",
@@ -133,8 +132,9 @@ export function toPermissionPrompt(params: Params): PermissionPrompt {
 }
 
 // Runs an ACP agent as one long-lived process and keeps one agent session per pane.
-// A session is reused while the pane's history matches what the agent already saw;
-// after retry, undo, branch, or a memory change Zenith starts a new session with the transcript.
+// A session is continued with only the new message when the window says the pane is unchanged
+// since its last turn; after retry, undo, branch, or a change of instructions Zenith starts a new
+// session with the transcript.
 // Errors from session/new that mean the agent wants a sign-in, not that something else broke.
 const SIGN_IN_PROBLEM = /api.?key|auth|sign.?in|log.?in|credential|unauthori[sz]ed/i;
 // The sign-in methods each connection's agent offered at initialize, API-key ones left out.
@@ -155,6 +155,7 @@ export function createAcpAdapter(
   // Latest context window size per agent session, from usage_update.
   const contextWindows = new Map<string, number>();
   const taskActivities = new Map<string, AgentActivity>();
+  let idleTimer: NodeJS.Timeout | undefined;
 
   async function connect(): Promise<AcpConnection> {
     const binary = await deps.resolveBinary();
@@ -291,6 +292,108 @@ export function createAcpAdapter(
     return spare ?? newSession(conn, cwd);
   }
 
+  // One prompt on an agent session, streamed until the agent ends the turn. Permission requests
+  // are routed by session id to this turn, so a continued session still asks the pane that sent
+  // the prompt.
+  async function* promptTurn(
+    conn: AcpConnection,
+    request: SendMessageRequest,
+    sessionId: string,
+    promptText: string,
+    keep: (sessionId: string) => void,
+    resumed: boolean,
+  ): AsyncIterable<ChatChunk> {
+    const queue: TurnEvent[] = [];
+    let wake: (() => void) | undefined;
+    turns.set(sessionId, (event) => {
+      queue.push(event);
+      wake?.();
+    });
+
+    let finished = false;
+    let failure: Error | undefined;
+    let usage: TokenUsage | undefined;
+    const onAbort = () => conn.notify("session/cancel", { sessionId });
+    request.signal?.addEventListener("abort", onAbort, { once: true });
+    const prompt = conn
+      .request<{ stopReason?: string; usage?: Params }>("session/prompt", {
+        sessionId,
+        prompt: [{ type: "text", text: promptText }],
+      })
+      .then((result) => {
+        const input = result.usage?.["inputTokens"];
+        const output = result.usage?.["outputTokens"];
+        if (typeof input === "number" && typeof output === "number") {
+          usage = { inputTokens: input, outputTokens: output };
+        }
+      })
+      .catch((error: unknown) => {
+        failure = error instanceof Error ? error : new Error(String(error));
+      })
+      .finally(() => {
+        finished = true;
+        wake?.();
+      });
+
+    // The turn's events in order, ending once the prompt request settles.
+    async function* events(): AsyncGenerator<TurnEvent> {
+      for (;;) {
+        const event = queue.shift();
+        if (event) {
+          yield event;
+          continue;
+        }
+        if (finished) return;
+        await new Promise<void>((resolve) => (wake = resolve));
+        wake = undefined;
+      }
+    }
+
+    try {
+      for await (const event of withStallNotices(events(), () => conn.notice)) {
+        if ("notice" in event) {
+          yield { delta: "", done: false, notice: event.notice };
+        } else if ("delta" in event) {
+          yield { delta: event.delta, done: false };
+        } else if ("activity" in event) {
+          yield { delta: "", done: false, activity: event.activity };
+        } else if ("todos" in event) {
+          yield { delta: "", done: false, todos: event.todos };
+        } else {
+          const choice =
+            request.signal?.aborted || !request.requestPermission
+              ? undefined
+              : await request.requestPermission(toPermissionPrompt(event.permission));
+          event.respond(
+            choice === undefined
+              ? { outcome: { outcome: "cancelled" } }
+              : { outcome: { outcome: "selected", optionId: choice } },
+          );
+        }
+      }
+      await prompt;
+    } finally {
+      turns.delete(sessionId);
+      request.signal?.removeEventListener("abort", onAbort);
+    }
+    if (failure) throw failure;
+    if (request.signal?.aborted) return;
+    keep(sessionId);
+    const contextWindow = contextWindows.get(sessionId);
+    yield {
+      delta: "",
+      done: true,
+      ...(usage ? { usage } : {}),
+      ...(contextWindow ? { contextWindow } : {}),
+      ...(resumed ? { resumed: true } : {}),
+    };
+  }
+
+  function closeConnection(): void {
+    void connection?.then((conn) => conn.close()).catch(() => undefined);
+    connection = undefined;
+  }
+
   return {
     id: spec.id,
 
@@ -311,135 +414,74 @@ export function createAcpAdapter(
     },
 
     dispose() {
-      void connection?.then((conn) => conn.close()).catch(() => undefined);
-      connection = undefined;
+      clearTimeout(idleTimer);
+      closeConnection();
     },
 
     async *sendMessage(request: SendMessageRequest): AsyncIterable<ChatChunk> {
+      clearTimeout(idleTimer);
       const conn = await getConnection();
-      const key = request.conversationId ?? randomUUID();
-      const history = request.messages.slice(0, -1);
       const latest = request.messages.at(-1);
       if (latest?.role !== "user")
         throw new Error("The conversation must end with a user message.");
 
       const cwd = request.projectPath ?? deps.cwd;
-      const existing = conversations.get(key);
-      const reuse =
+      const system = buildCliPrompt(request.messages).system ?? "";
+      const key = request.conversationId;
+      const existing = key === undefined ? undefined : conversations.get(key);
+      if (key !== undefined) conversations.delete(key);
+      // The window vouches that the pane is unchanged since the turn that left this session, and
+      // the session was opened in the same folder, with the same model and instructions.
+      const resumable =
+        request.resumeFrom !== undefined &&
+        existing?.turnId === request.resumeFrom &&
         existing?.cwd === cwd &&
         existing.modelId === request.model &&
-        existing.fingerprint === fingerprintMessages(history);
-      conversations.delete(key);
-
-      let sessionId: string;
-      let promptText: string;
-      if (reuse) {
-        sessionId = existing.sessionId;
-        promptText = latest.content;
-      } else {
-        sessionId = await takeSession(conn, cwd);
+        existing.system === system
+          ? existing.sessionId
+          : undefined;
+      const keep = (sessionId: string) => {
+        if (key === undefined || request.turnId === undefined) return;
+        conversations.set(key, {
+          sessionId,
+          turnId: request.turnId,
+          cwd,
+          modelId: request.model,
+          system,
+        });
+      };
+      // A new session gets the whole transcript, instructions first.
+      async function* fresh(): AsyncIterable<ChatChunk> {
+        const current = await getConnection();
+        const sessionId = await takeSession(current, cwd);
         if (request.model !== DEFAULT_MODEL_ID) {
-          await conn.request("session/set_model", {
+          await current.request("session/set_model", {
             sessionId,
             modelId: assertSafeModelId(request.model),
           });
         }
-        promptText = withSystemPreamble(buildCliPrompt(request.messages));
+        const promptText = withSystemPreamble(buildCliPrompt(request.messages));
+        yield* promptTurn(current, request, sessionId, promptText, keep, false);
       }
 
-      const queue: TurnEvent[] = [];
-      let wake: (() => void) | undefined;
-      turns.set(sessionId, (event) => {
-        queue.push(event);
-        wake?.();
-      });
-
-      let finished = false;
-      let failure: Error | undefined;
-      let usage: TokenUsage | undefined;
-      const onAbort = () => conn.notify("session/cancel", { sessionId });
-      request.signal?.addEventListener("abort", onAbort, { once: true });
-      const prompt = conn
-        .request<{ stopReason?: string; usage?: Params }>("session/prompt", {
-          sessionId,
-          prompt: [{ type: "text", text: promptText }],
-        })
-        .then((result) => {
-          const input = result.usage?.["inputTokens"];
-          const output = result.usage?.["outputTokens"];
-          if (typeof input === "number" && typeof output === "number") {
-            usage = { inputTokens: input, outputTokens: output };
-          }
-        })
-        .catch((error: unknown) => {
-          failure = error instanceof Error ? error : new Error(String(error));
-        })
-        .finally(() => {
-          finished = true;
-          wake?.();
-        });
-
-      // The turn's events in order, ending once the prompt request settles.
-      async function* events(): AsyncGenerator<TurnEvent> {
-        for (;;) {
-          const event = queue.shift();
-          if (event) {
-            yield event;
-            continue;
-          }
-          if (finished) return;
-          await new Promise<void>((resolve) => (wake = resolve));
-          wake = undefined;
-        }
-      }
-
-      let reply = "";
       try {
-        for await (const event of withStallNotices(events(), () => conn.notice)) {
-          if ("notice" in event) {
-            yield { delta: "", done: false, notice: event.notice };
-          } else if ("delta" in event) {
-            reply += event.delta;
-            yield { delta: event.delta, done: false };
-          } else if ("activity" in event) {
-            yield { delta: "", done: false, activity: event.activity };
-          } else if ("todos" in event) {
-            yield { delta: "", done: false, todos: event.todos };
-          } else {
-            const choice =
-              request.signal?.aborted || !request.requestPermission
-                ? undefined
-                : await request.requestPermission(toPermissionPrompt(event.permission));
-            event.respond(
-              choice === undefined
-                ? { outcome: { outcome: "cancelled" } }
-                : { outcome: { outcome: "selected", optionId: choice } },
-            );
-          }
-        }
-        await prompt;
+        yield* resumeOrReplay(
+          resumable === undefined
+            ? undefined
+            : () => promptTurn(conn, request, resumable, latest.content, keep, true),
+          fresh,
+          request.signal,
+        );
       } finally {
-        turns.delete(sessionId);
-        request.signal?.removeEventListener("abort", onAbort);
+        // Kept sessions live in the agent's process; once no pane has used it for a while it is
+        // closed, and the next turn starts a new one with the transcript.
+        if (turns.size === 0) {
+          idleTimer = setTimeout(() => {
+            if (turns.size === 0) closeConnection();
+          }, deps.idleCloseMs ?? IDLE_CLOSE_MS);
+          idleTimer.unref();
+        }
       }
-      if (failure) throw failure;
-      if (request.signal?.aborted) return;
-      conversations.set(key, {
-        sessionId,
-        cwd,
-        modelId: request.model,
-        fingerprint: fingerprintMessages([
-          ...request.messages,
-          { role: "assistant", content: reply },
-        ]),
-      });
-      const contextWindow = contextWindows.get(sessionId);
-      yield {
-        delta: "",
-        done: true,
-        ...(usage ? { usage } : {}),
-        ...(contextWindow ? { contextWindow } : {}),
-      };
     },
   };
 }

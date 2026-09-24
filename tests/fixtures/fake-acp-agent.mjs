@@ -1,5 +1,6 @@
 // A minimal ACP agent for tests. Replies "<sessionId>|<model>|<prompt text>" and reacts to
-// PERMISSION (asks for approval), HANG (waits for session/cancel), and CRASH (exits).
+// PERMISSION (asks for approval), HANG (waits for session/cancel), CRASH (exits), and FORGET
+// (replies, then forgets every session, so continuing one fails).
 import { createInterface } from "node:readline";
 
 const send = (message) =>
@@ -70,6 +71,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   if (method === "session/prompt") {
     const text = params.prompt[0].text;
     const sessionId = params.sessionId;
+    if (!models.has(sessionId)) {
+      return send({ id, error: { code: -32000, message: `Session not found: ${sessionId}` } });
+    }
     if (text.includes("CRASH")) {
       process.stderr.write("fake agent crashed on purpose\n");
       process.exit(3);
@@ -105,6 +109,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
     chunk(sessionId, `${sessionId}|${models.get(sessionId)}|`);
     chunk(sessionId, text);
+    if (text.includes("FORGET")) models.clear();
     return send({
       id,
       result: { stopReason: "end_turn", usage: { inputTokens: 11, outputTokens: 5 } },

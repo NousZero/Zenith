@@ -72,4 +72,18 @@ describe("context inspector", () => {
       "Read, TodoWrite",
     );
   });
+
+  it("shows only the newest message when the agent continued its own session", async () => {
+    const snapshot = await describeContext({
+      providerId: "claude-code",
+      modelId: "haiku",
+      messages,
+      projectPath: project,
+      resumed: true,
+    });
+    expect(snapshot.sections.map((section) => section.label)).toEqual(["Latest message"]);
+    expect(snapshot.sections[0]?.text).toBe("Fix the bug");
+    expect(snapshot.totalTokens).toBe(snapshot.sections[0]?.tokens);
+    expect(snapshot.note).toContain("continued the agent's own session");
+  });
 });

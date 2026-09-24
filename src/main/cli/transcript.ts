@@ -35,6 +35,14 @@ export function buildCliPrompt(messages: ChatMessage[]): CliPrompt {
   };
 }
 
+// Instructions and the newest message only, for an agent continuing its own session, which
+// already holds the earlier turns.
+export function latestPrompt(messages: ChatMessage[]): CliPrompt {
+  return buildCliPrompt(
+    messages.filter((message, index) => message.role === "system" || index === messages.length - 1),
+  );
+}
+
 export function withSystemPreamble({ system, prompt }: CliPrompt): string {
   return system === undefined ? prompt : `Follow these instructions:\n${system}\n\n${prompt}`;
 }

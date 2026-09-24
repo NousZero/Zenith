@@ -55,9 +55,15 @@ export function parseClaudeCodeLine(line: string): CliLineEvent | undefined {
     return undefined;
   }
 
+  // The session id, which a later turn passes to --resume to continue this conversation.
+  const sessionId = typeof event["session_id"] === "string" ? event["session_id"] : undefined;
+  if (event["type"] === "system" && event["subtype"] === "init") {
+    return sessionId ? { sessionId } : undefined;
+  }
+
   if (event["type"] === "result") {
     const usage = asRecord(event["usage"]);
-    const result: CliLineEvent = {};
+    const result: CliLineEvent = sessionId ? { sessionId } : {};
     if (usage) {
       result.usage = {
         inputTokens:
@@ -103,7 +109,7 @@ export const claudeCodeSpec: CliToolSpec = {
     return MODELS;
   },
 
-  buildInvocation(model, { system, prompt, images }) {
+  buildInvocation(model, { system, prompt, images }, session) {
     const args = [
       "-p",
       "--output-format",
@@ -112,7 +118,9 @@ export const claudeCodeSpec: CliToolSpec = {
       "--include-partial-messages",
       "--tools",
       "",
-      "--no-session-persistence",
+      // A pane's turns are saved so the next one can continue them; one-off requests are not.
+      ...(session ? [] : ["--no-session-persistence"]),
+      ...(session?.resume ? [`--resume=${session.resume}`] : []),
       "--strict-mcp-config",
       "--setting-sources",
       "",
