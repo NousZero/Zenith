@@ -121,6 +121,21 @@ describe("createCliAdapter with a real child process", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  it("shows the tool's latest warning once while it is silent, then streams on", async () => {
+    const script = `
+      process.stderr.write("Warning: quota nearly exhausted, retrying\\n");
+      setTimeout(() => console.log(JSON.stringify({ t: "delta", v: "late" })), 500);`;
+    const adapter = createCliAdapter(fakeCliSpec(script), { ...deps(), stallNoticeMs: 50 });
+    const chunks = await collect(
+      adapter.sendMessage({ model: "default", messages: [{ role: "user", content: "x" }] }),
+    );
+    expect(chunks).toEqual([
+      { delta: "", done: false, notice: "quota nearly exhausted, retrying" },
+      { delta: "late", done: false },
+      { delta: "", done: true },
+    ]);
+  });
+
   it("rejects model ids that could be parsed as flags before spawning anything", async () => {
     const adapter = createCliAdapter(fakeCliSpec("process.exit(0)"), deps());
     await expect(

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // A stand-in for `claude -p --input-format stream-json --permission-prompt-tool stdio`.
 // Proposes an edit to notes.txt, waits for Zenith's decision, then updates its todo list and replies.
+// With FAKE_CLAUDE_STALL_MS set, it first logs a warning to stderr and says nothing for that long,
+// like Claude Code waiting out a rate limit.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -17,22 +19,13 @@ lines.on("line", (line) => {
   const message = JSON.parse(line);
   if (step === "prompt" && message.type === "user") {
     step = "approval";
-    out({ type: "system", subtype: "init", cwd: process.cwd() });
-    const input = {
-      file_path: file,
-      old_string: "alpha\n",
-      new_string: "alpha\nbeta\n",
-      replace_all: false,
-    };
-    out({
-      type: "assistant",
-      message: { content: [{ type: "tool_use", id: "tool-1", name: "Edit", input }] },
-    });
-    out({
-      type: "control_request",
-      request_id: "req-1",
-      request: { subtype: "can_use_tool", tool_name: "Edit", input, tool_use_id: "tool-1" },
-    });
+    const stall = Number(process.env.FAKE_CLAUDE_STALL_MS ?? 0);
+    if (stall > 0) {
+      process.stderr.write("[WARN] API rate limited (429); retrying in 30s\n");
+      setTimeout(propose, stall);
+    } else {
+      propose();
+    }
     return;
   }
   if (step === "approval" && message.type === "control_response") {
@@ -80,3 +73,22 @@ lines.on("line", (line) => {
   }
 });
 lines.on("close", () => process.exit(0));
+
+function propose() {
+  out({ type: "system", subtype: "init", cwd: process.cwd() });
+  const input = {
+    file_path: file,
+    old_string: "alpha\n",
+    new_string: "alpha\nbeta\n",
+    replace_all: false,
+  };
+  out({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "tool-1", name: "Edit", input }] },
+  });
+  out({
+    type: "control_request",
+    request_id: "req-1",
+    request: { subtype: "can_use_tool", tool_name: "Edit", input, tool_use_id: "tool-1" },
+  });
+}

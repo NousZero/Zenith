@@ -14,6 +14,7 @@ import type {
   TokenUsage,
 } from "../../shared/types";
 import { asRecord, DEFAULT_MODEL_ID, lastNonEmptyLine, parseJsonLine } from "../cli/cli-adapter";
+import { stallNotice, withStallNotices } from "../cli/stall-notice";
 import { assertSafeModelId, buildCliPrompt } from "../cli/transcript";
 import { parseClaudeCodeLine } from "../providers/claude-code";
 import { anthropicContent } from "../providers/content";
@@ -65,6 +66,8 @@ export interface ClaudeAgentDeps {
   permissionRules?(): PermissionRule[];
   // Claude Code's own sandbox settings, when the user turned sandboxing on.
   sandboxSettings?(): Promise<string | undefined>;
+  // How long Claude Code may be silent before its latest warning is shown; shortened in tests.
+  stallNoticeMs?: number;
 }
 
 function text(value: unknown): string {
@@ -333,7 +336,16 @@ export async function* runClaudeAgent(
   };
 
   try {
-    for await (const line of createInterface({ input: child.stdout, crlfDelay: Infinity })) {
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    for await (const line of withStallNotices(
+      lines,
+      () => stallNotice(stderr),
+      deps.stallNoticeMs,
+    )) {
+      if (typeof line !== "string") {
+        yield { delta: "", done: false, notice: line.notice };
+        continue;
+      }
       const event = parseJsonLine(line);
       if (!event) continue;
 

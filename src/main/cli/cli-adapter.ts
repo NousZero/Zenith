@@ -6,6 +6,7 @@ import type {
   TokenUsage,
 } from "../../shared/types";
 import { runCli, type CliExit } from "./run-cli";
+import { withStallNotices } from "./stall-notice";
 import { assertSafeModelId, buildCliPrompt, type CliPrompt } from "./transcript";
 
 export const DEFAULT_MODEL_ID = "default";
@@ -38,6 +39,8 @@ export interface CliAdapterDeps {
   resolveBinary(): Promise<string | undefined>;
   childEnv(binaryPath: string): NodeJS.ProcessEnv;
   cwd: string;
+  // How long a tool may be silent before its latest warning is shown; shortened in tests.
+  stallNoticeMs?: number;
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -97,7 +100,11 @@ export function createCliAdapter(spec: CliToolSpec, deps: CliAdapterDeps): Provi
       let contextUsage: TokenUsage | undefined;
 
       try {
-        for await (const line of run.lines) {
+        for await (const line of withStallNotices(run.lines, run.notice, deps.stallNoticeMs)) {
+          if (typeof line !== "string") {
+            yield { delta: "", done: false, notice: line.notice };
+            continue;
+          }
           const event = spec.parseLine(line);
           if (!event) continue;
           if (event.error !== undefined) streamError ??= event.error;

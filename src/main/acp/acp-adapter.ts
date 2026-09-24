@@ -14,10 +14,8 @@ import type {
 } from "../../shared/types";
 import { asRecord, DEFAULT_MODEL_ID } from "../cli/cli-adapter";
 import { assertSafeModelId, buildCliPrompt, withSystemPreamble } from "../cli/transcript";
+import { withStallNotices } from "../cli/stall-notice";
 import { AcpConnection } from "./connection";
-
-// How long an agent may say nothing before its latest warning is shown.
-const STALL_NOTICE_MS = 15_000;
 
 const PROTOCOL_VERSION = 1;
 
@@ -368,31 +366,26 @@ export function createAcpAdapter(
           wake?.();
         });
 
-      let reply = "";
-      // An agent waiting on its own model provider (a quota retry, say) sends nothing over ACP;
-      // after a quiet spell, its latest warning on stderr is passed on so the user sees why.
-      let shownNotice: string | undefined;
-      try {
-        while (true) {
+      // The turn's events in order, ending once the prompt request settles.
+      async function* events(): AsyncGenerator<TurnEvent> {
+        for (;;) {
           const event = queue.shift();
-          if (!event) {
-            if (finished) break;
-            const woke = await new Promise<boolean>((resolve) => {
-              const timer = setTimeout(() => resolve(false), STALL_NOTICE_MS);
-              wake = () => {
-                clearTimeout(timer);
-                resolve(true);
-              };
-            });
-            wake = undefined;
-            const notice = woke ? undefined : conn.notice;
-            if (notice && notice !== shownNotice) {
-              shownNotice = notice;
-              yield { delta: "", done: false, notice };
-            }
+          if (event) {
+            yield event;
             continue;
           }
-          if ("delta" in event) {
+          if (finished) return;
+          await new Promise<void>((resolve) => (wake = resolve));
+          wake = undefined;
+        }
+      }
+
+      let reply = "";
+      try {
+        for await (const event of withStallNotices(events(), () => conn.notice)) {
+          if ("notice" in event) {
+            yield { delta: "", done: false, notice: event.notice };
+          } else if ("delta" in event) {
             reply += event.delta;
             yield { delta: event.delta, done: false };
           } else if ("activity" in event) {

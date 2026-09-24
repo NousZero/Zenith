@@ -33,7 +33,12 @@ describe("Claude Code agent mode", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function run(choice: string | undefined, rules = "", sandboxSettings?: string) {
+  async function run(
+    choice: string | undefined,
+    rules = "",
+    sandboxSettings?: string,
+    stallMs?: number,
+  ) {
     const store = createProjectStore(db);
     const prompts: PermissionPrompt[] = [];
     const chunks: ChatChunk[] = [];
@@ -53,12 +58,14 @@ describe("Claude Code agent mode", () => {
         childEnv: () => ({
           PATH: process.env["PATH"] ?? "",
           FAKE_CLAUDE_ARGS_FILE: join(dir, "args.json"),
+          ...(stallMs ? { FAKE_CLAUDE_STALL_MS: String(stallMs) } : {}),
         }),
         saveCheckpoint: store.saveCheckpoint,
         syncTodos: store.syncTodos,
         mcpConfigPath: async () => undefined,
         permissionRules: () => parsePermissionRules(rules),
         sandboxSettings: async () => sandboxSettings,
+        stallNoticeMs: 50,
       },
     )) {
       chunks.push(chunk);
@@ -116,6 +123,18 @@ describe("Claude Code agent mode", () => {
     await run("allow", "", '{"sandbox":{"enabled":true}}');
     const sandboxed = JSON.parse(await readFile(join(dir, "args.json"), "utf8")) as string[];
     expect(sandboxed[sandboxed.indexOf("--settings") + 1]).toBe('{"sandbox":{"enabled":true}}');
+  });
+
+  it("shows Claude Code's latest warning once while it is silent, then carries on", async () => {
+    const { chunks } = await run("allow", "", undefined, 500);
+    const notices = chunks.flatMap((chunk) => (chunk.notice ? [chunk.notice] : []));
+    // Several quiet spells pass, but the same warning is shown only once.
+    expect(notices).toEqual(["API rate limited (429); retrying in 30s"]);
+    expect(chunks.findIndex((chunk) => chunk.notice)).toBeLessThan(
+      chunks.findIndex((chunk) => chunk.activity),
+    );
+    expect(chunks.map((chunk) => chunk.delta).join("")).toBe("Edited.");
+    expect(await readFile(join(project, "notes.txt"), "utf8")).toBe("alpha\nbeta\n");
   });
 
   it("follows permission rules without asking", async () => {
