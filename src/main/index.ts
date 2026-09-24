@@ -11,16 +11,14 @@ protocol.registerSchemesAsPrivileged([PREVIEW_SCHEME_PRIVILEGES]);
 
 initErrorLog(app.getPath("userData"));
 
-// These crashed before too; this only makes sure a local record is written first. process.exit
-// replicates Node's default uncaught-exception behaviour, which registering a handler here would
-// otherwise suppress.
+// Electron's main process shows a dialog on an uncaught error and keeps running; a stray error
+// from one bot socket or agent process shouldn't close every conversation. So these record the
+// error locally and let the app carry on, without the dialog, which only had "OK" to offer.
 process.on("uncaughtException", (error) => {
   logError("crash", error);
-  process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   logError("crash", reason);
-  process.exit(1);
 });
 app.on("render-process-gone", (_event, _webContents, details) => {
   logError("crash", new Error(`Renderer process gone: ${details.reason}`));
