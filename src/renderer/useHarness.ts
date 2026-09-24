@@ -101,6 +101,10 @@ export function useHarness(
     memoryChanged.current = onMemoryChanged;
   });
   const [session, setSession] = useState<SessionState>(initial);
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  });
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
   const addPane = useCallback((defaults?: PaneDefaults) => {
@@ -127,9 +131,22 @@ export function useHarness(
 
   // Only panes with an entry here are streaming; the entry is removed when the reply ends.
   const streamState = useRef(
-    new Map<string, { requestId: string; assistantId: string; text: string; usage?: TokenUsage }>(),
+    new Map<
+      string,
+      {
+        requestId: string;
+        // The session the reply belongs to, which may no longer be the open one.
+        sessionId: string;
+        assistantId: string;
+        text: string;
+        usage?: TokenUsage;
+      }
+    >(),
   );
   const [streamingPaneIds, setStreamingPaneIds] = useState<ReadonlySet<string>>(new Set());
+  // Pane id to session id for every running reply, so a tab or rail row other than the open one
+  // can show that its session is working.
+  const [runningSessions, setRunningSessions] = useState<ReadonlyMap<string, string>>(new Map());
   const [agentTurns, setAgentTurns] = useState<Record<string, AgentTurn>>({});
   // Why a pane's running agent has gone quiet, until it shows progress again.
   const [notices, setNotices] = useState<Record<string, string>>({});
@@ -144,6 +161,9 @@ export function useHarness(
   const endStream = useCallback((paneId: string) => {
     streamState.current.delete(paneId);
     setStreamingPaneIds(new Set(streamState.current.keys()));
+    setRunningSessions(
+      new Map([...streamState.current].map(([id, entry]) => [id, entry.sessionId])),
+    );
     setPermissions((current) => current.filter((request) => request.paneId !== paneId));
     if (streamState.current.size === 0) sendQueued.current();
   }, []);
@@ -199,8 +219,15 @@ export function useHarness(
       state.text += chunk.delta;
       if (chunk.usage) state.usage = chunk.usage;
       if (chunk.contextUsage) state.usage = chunk.contextUsage;
-      const { assistantId, text, usage: reported } = state;
+      const { assistantId, text, usage: reported, sessionId } = state;
       if (chunk.done) endStream(paneId);
+      // A reply that ends while another session is open is written to its own session on disk,
+      // since that session is no longer in memory.
+      if (chunk.done && !sessionRef.current.panes.some((pane) => pane.id === paneId)) {
+        void saveFinishedReply(sessionId, paneId, (pane) =>
+          withReply(pane, assistantId, text, true, reported, chunk.contextWindow),
+        ).catch((error: unknown) => console.error("Failed to save a finished reply:", error));
+      }
       const { activity, todos, snapshot } = chunk;
       if (chunk.notice) {
         const notice = chunk.notice;
@@ -244,30 +271,11 @@ export function useHarness(
       if (!chunk.delta && !chunk.done) return;
       setSession((current) => ({
         ...current,
-        panes: current.panes.map((pane) => {
-          if (pane.id !== paneId) return pane;
-          const messages = [...pane.messages];
-          if (chunk.delta) {
-            const last = messages.at(-1);
-            if (last?.id === assistantId) {
-              messages[messages.length - 1] = { ...last, content: text };
-            } else {
-              messages.push({ id: assistantId, role: "assistant", content: text });
-            }
-          }
-          if (!chunk.done) return { ...pane, messages };
-          const contextWindow = chunk.contextWindow ?? pane.contextWindow;
-          // Prefer the tool's real token counts; fall back to the estimate when none arrive.
-          return reported
-            ? {
-                ...pane,
-                messages,
-                contextWindow,
-                promptTokens: reported.inputTokens,
-                completionTokens: reported.outputTokens,
-              }
-            : { ...pane, messages, contextWindow, completionTokens: estimateTokens(text) };
-        }),
+        panes: current.panes.map((pane) =>
+          pane.id === paneId
+            ? withReply(pane, assistantId, text, chunk.done, reported, chunk.contextWindow)
+            : pane,
+        ),
       }));
     });
     unsubscribeRef.current = () => {
@@ -300,8 +308,16 @@ export function useHarness(
       abortPane(pane.id);
       ensureChunkListener();
       const requestId = crypto.randomUUID();
-      streamState.current.set(pane.id, { requestId, assistantId: crypto.randomUUID(), text: "" });
+      streamState.current.set(pane.id, {
+        requestId,
+        sessionId: session.id,
+        assistantId: crypto.randomUUID(),
+        text: "",
+      });
       setStreamingPaneIds(new Set(streamState.current.keys()));
+      setRunningSessions(
+        new Map([...streamState.current].map(([id, entry]) => [id, entry.sessionId])),
+      );
       const paneInstructions = [
         personaText,
         agent ? `You are acting as the "${agent.name}" agent:\n${agent.body}` : "",
@@ -701,6 +717,7 @@ export function useHarness(
     session,
     setSession,
     streamingPaneIds,
+    runningSessions,
     agentTurns,
     notices,
     rollbackTurn,
@@ -728,6 +745,51 @@ export function useHarness(
     abortAll,
     clearAgentCache: () => agentCache.current.clear(),
   };
+}
+
+// The pane with a reply's text so far and, once it is done, its token counts.
+function withReply(
+  pane: PaneState,
+  assistantId: string,
+  text: string,
+  done: boolean,
+  reported: TokenUsage | undefined,
+  reportedWindow: number | undefined,
+): PaneState {
+  const messages = [...pane.messages];
+  if (text !== "") {
+    const last = messages.at(-1);
+    if (last?.id === assistantId) {
+      messages[messages.length - 1] = { ...last, content: text };
+    } else {
+      messages.push({ id: assistantId, role: "assistant", content: text });
+    }
+  }
+  if (!done) return { ...pane, messages };
+  const contextWindow = reportedWindow ?? pane.contextWindow;
+  // Prefer the tool's real token counts; fall back to the estimate when none arrive.
+  return reported
+    ? {
+        ...pane,
+        messages,
+        contextWindow,
+        promptTokens: reported.inputTokens,
+        completionTokens: reported.outputTokens,
+      }
+    : { ...pane, messages, contextWindow, completionTokens: estimateTokens(text) };
+}
+
+async function saveFinishedReply(
+  sessionId: string,
+  paneId: string,
+  update: (pane: PaneState) => PaneState,
+): Promise<void> {
+  const saved = await window.zenith.sessions.load(sessionId);
+  if (!saved) return;
+  await persistSession({
+    ...saved,
+    panes: saved.panes.map((pane) => (pane.id === paneId ? update(pane) : pane)),
+  });
 }
 
 export async function persistSession(session: SessionState): Promise<void> {

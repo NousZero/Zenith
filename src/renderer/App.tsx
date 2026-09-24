@@ -65,6 +65,7 @@ import {
   TopBar,
   type ActivityId,
   type DockTab,
+  type SessionStatus,
 } from "./Workbench";
 import { ReviewBar, TodoStrip } from "./AgentPanel";
 import type {
@@ -187,6 +188,7 @@ export function App() {
     session,
     setSession,
     streamingPaneIds,
+    runningSessions,
     agentTurns,
     notices,
     rollbackTurn,
@@ -953,14 +955,19 @@ export function App() {
     setLibraryVersion((value) => value + 1);
   };
 
-  const activeStatus =
-    pendingCount > 0 ? "waiting" : streamingPaneIds.size > 0 ? "running" : "idle";
+  // A reply keeps running when its tab is left, so each session's dot follows its own replies.
+  const sessionStatus = (id: string): SessionStatus =>
+    permissions.some((request) => runningSessions.get(request.paneId) === id)
+      ? "waiting"
+      : [...runningSessions.values()].includes(id)
+        ? "running"
+        : "idle";
   const sessionTabs = (
     <SessionTabs
       tabs={openTabs}
       activeId={sessionId}
       activeName={session.name}
-      activeStatus={activeStatus}
+      statusOf={sessionStatus}
       onSelect={focusTab}
       onClose={closeSessionTab}
       onCreate={() => void createSession()}
@@ -1224,7 +1231,7 @@ export function App() {
           onSelect={setActivity}
           activeSessionId={sessionId}
           activeSessionName={session.name}
-          activeStatus={activeStatus}
+          statusOf={sessionStatus}
           onSelectSession={(id) => void selectSession(id)}
           onCreateSession={() => {
             void createSession();

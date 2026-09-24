@@ -15,8 +15,8 @@ export function SessionTabs(props: {
   tabs: readonly string[];
   activeId: string;
   activeName: string;
-  // Live state of the open session, as the rail shows it; other tabs are not running.
-  activeStatus: "running" | "waiting" | "idle";
+  // Whether a session's reply is running or waiting for an approval, as the rail shows it.
+  statusOf(id: string): "running" | "waiting" | "idle";
   onSelect(id: string): void;
   onClose(id: string): void;
   onCreate(): void;
@@ -58,7 +58,7 @@ export function SessionTabs(props: {
         {props.tabs.map((id) => {
           const active = id === props.activeId;
           const name = (active ? props.activeName : names[id]) || UNTITLED_SESSION;
-          const status = active ? props.activeStatus : "idle";
+          const status = props.statusOf(id);
           return (
             <div
               key={id}

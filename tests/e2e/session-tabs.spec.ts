@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { launchApp } from "./support/electron-app";
+import { createGitProject } from "./support/git-project";
+import { sendPrompt } from "./support/send-and-approve";
+import { setProjectFolder } from "./support/set-project-folder";
 
 const FIRST_PROMPT = "Explain the build scripts in this repo.";
 const closeKey = process.platform === "darwin" ? "Meta+w" : "Control+w";
@@ -68,6 +71,80 @@ test("session tabs: open, switch, close with the shortcut, and always keep one o
     );
     await expect(page.getByText("What are we working on?")).toBeVisible();
     await expect(rail.getByRole("button", { name: "Build scripts", exact: true })).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+test("session tabs: a reply left running in another tab shows its status there and is saved", async () => {
+  const projectPath = createGitProject();
+  const { page, close } = await launchApp();
+  try {
+    await setProjectFolder(page, projectPath);
+    await sendPrompt(page);
+    const tabs = page.getByRole("tablist", { name: "Open sessions" });
+    const firstTab = tabs.getByRole("tab").first();
+
+    // Leave the run waiting on its approval: its own tab keeps the dot, the new one has none.
+    await page.getByRole("button", { name: "New tab" }).click();
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+    await expect(firstTab).toContainText("Needs your answer");
+    await expect(tabs.getByRole("tab").last()).not.toContainText("Needs your answer");
+
+    // Approve from the bottom panel; the reply finishes while the other tab is open.
+    await page
+      .getByRole("alertdialog", { name: "Agent approval" })
+      .getByRole("button", { name: "Allow", exact: true })
+      .click();
+    await expect(firstTab).not.toContainText("Needs your answer");
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const list = await window.zenith.sessions.list();
+          const sessions = await Promise.all(
+            list.map((item) => window.zenith.sessions.load(item.id)),
+          );
+          return sessions.some((session) =>
+            session?.panes[0]?.messages.some((message) =>
+              message.content.includes("Want me to change it?"),
+            ),
+          );
+        }),
+      )
+      .toBe(true);
+
+    await firstTab.click();
+    await expect(
+      page.getByRole("region", { name: "Conversation" }).getByText("Want me to change it?"),
+    ).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+test("delete: the rail asks in a popup before deleting a session", async () => {
+  const { page, close } = await launchApp();
+  try {
+    await seedFirstSession(page);
+    const rail = page.getByRole("list", { name: "Sessions" });
+    const popup = page.getByRole("dialog", { name: "Delete “Build scripts”?" });
+
+    await rail.getByRole("button", { name: "Build scripts", exact: true }).hover();
+    await rail.getByRole("button", { name: "Delete Build scripts" }).click();
+    await expect(popup).toBeVisible();
+    await popup.getByRole("button", { name: "Cancel" }).click();
+    await expect(popup).not.toBeVisible();
+    await expect(rail.getByRole("button", { name: "Build scripts", exact: true })).toBeVisible();
+
+    await rail.getByRole("button", { name: "Build scripts", exact: true }).hover();
+    await rail.getByRole("button", { name: "Delete Build scripts" }).click();
+    await popup.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(rail.getByRole("button", { name: "Build scripts", exact: true })).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("tablist", { name: "Open sessions" })
+        .getByRole("tab", { name: "Build scripts" }),
+    ).toHaveCount(0);
   } finally {
     await close();
   }

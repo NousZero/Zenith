@@ -28,6 +28,13 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import { Button } from "./components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
 import type { ExtraId } from "./extras";
 import { formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
@@ -46,13 +53,12 @@ import type { AgentTurn } from "./useHarness";
 import { TerminalView } from "./TerminalView";
 import { ChangesTab, TestsTab } from "./WorkspaceTabs";
 
-const DELETE_CONFIRM_WINDOW_MS = 3000;
-
 function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
 
 export type ActivityId = "workspace" | "files" | "browser" | "goals";
+export type SessionStatus = "running" | "waiting" | "idle";
 
 export function TopBar(props: {
   // Where the user is, such as ["Files", "zenith"].
@@ -155,8 +161,8 @@ export function ActivityRail(props: {
   onSelect(id: ActivityId): void;
   activeSessionId: string;
   activeSessionName: string;
-  // Live state of the open session; other sessions are not running.
-  activeStatus: "running" | "waiting" | "idle";
+  // Whether a session's reply is running or waiting for an approval.
+  statusOf(id: string): SessionStatus;
   onSelectSession(id: string): void;
   onCreateSession(): void;
   onDeleteSession(id: string): Promise<void>;
@@ -167,8 +173,8 @@ export function ActivityRail(props: {
   extras: Record<ExtraId, boolean>;
 }) {
   const [summaries, setSummaries] = useState<SessionSummary[]>([]);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The session the delete popup asks about, if it is open.
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const refresh = () => {
     window.zenith.sessions
@@ -178,17 +184,11 @@ export function ActivityRail(props: {
   };
 
   useEffect(refresh, [props.activeSessionId]);
-  useEffect(() => () => clearTimeout(confirmTimer.current), []);
 
-  function requestDelete(id: string) {
-    clearTimeout(confirmTimer.current);
-    if (confirmDeleteId === id) {
-      setConfirmDeleteId(null);
-      void props.onDeleteSession(id).then(refresh);
-      return;
-    }
-    setConfirmDeleteId(id);
-    confirmTimer.current = setTimeout(() => setConfirmDeleteId(null), DELETE_CONFIRM_WINDOW_MS);
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleteTarget(null);
+    void props.onDeleteSession(deleteTarget.id).then(refresh);
   }
 
   // A just-created session may not be saved yet when the list is fetched.
@@ -258,9 +258,8 @@ export function ActivityRail(props: {
       <ul aria-label="Sessions" className="min-h-[124px] flex-1 overflow-y-auto px-2.5">
         {rows.map((summary) => {
           const isActive = summary.id === props.activeSessionId;
-          const isConfirming = confirmDeleteId === summary.id;
           const name = (isActive ? props.activeSessionName : summary.name) || "Untitled session";
-          const status = isActive ? props.activeStatus : "idle";
+          const status = props.statusOf(summary.id);
           return (
             <li key={summary.id} className="group relative">
               <button
@@ -305,21 +304,36 @@ export function ActivityRail(props: {
               </button>
               <button
                 type="button"
-                aria-label={isConfirming ? `Confirm delete ${name}` : `Delete ${name}`}
-                onClick={() => requestDelete(summary.id)}
-                className={cn(
-                  "absolute right-1 top-1/2 flex h-6 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100",
-                  isConfirming
-                    ? "bg-destructive/20 px-1.5 text-[10px] text-danger opacity-100"
-                    : "w-6",
-                )}
+                aria-label={`Delete ${name}`}
+                onClick={() => setDeleteTarget({ id: summary.id, name })}
+                className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center text-muted-foreground opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
               >
-                {isConfirming ? "Delete?" : <Trash2 className="size-3" aria-hidden />}
+                <Trash2 className="size-3" aria-hidden />
               </button>
             </li>
           );
         })}
       </ul>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="w-[min(400px,calc(100vw-48px))]">
+          <DialogHeader>
+            <DialogTitle>Delete “{deleteTarget?.name}”?</DialogTitle>
+            <DialogDescription>
+              Its conversation is removed from Zenith and can’t be restored. Files in its project
+              folder are not touched.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-2">
         <button type="button" className={railButton(false)} onClick={props.onOpenHistory}>

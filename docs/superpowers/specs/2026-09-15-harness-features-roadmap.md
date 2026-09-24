@@ -457,9 +457,9 @@ On the Workspace, the top bar's breadcrumb gave way to Safari-like tabs, one per
   keys typed in the terminal stay the terminal's.
 - A reply still running when you switch tabs is not stopped, as before: it keeps running, and its
   approvals still reach the bottom panel. Return before it finishes and the whole reply shows; if
-  it finishes while another tab is open, the part that arrived after you left is not saved to its
-  session. The running and waiting dot follows the open tab, since it reports the one run in
-  progress.
+  it finishes while another tab is open, it is written to its own session on disk. Each tab and
+  rail row shows its own session's running or waiting dot.
+- Deleting a session from the rail asks first, in a popup naming the session.
 - **Verified:** unit tests for the list rules and storage; an e2e test that opens two tabs,
   switches between them, closes one with ⌘W (the session stays in the rail) and closes the last
   (a new empty one opens). In the packaged app, a real ⌘W keystroke closed a tab and left the
