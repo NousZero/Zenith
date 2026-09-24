@@ -452,6 +452,15 @@ export interface ZenithApi {
     // Newest first.
     list(limit?: number): Promise<AuditEntry[]>;
   };
+  log: {
+    // Records a renderer-side error to the local error log.
+    report(message: string, stack?: string): Promise<void>;
+    // The last lines of the local error log, newest last.
+    recent(maxBytes?: number): Promise<string>;
+    appInfo(): Promise<{ version: string; platform: string; osVersion: string; electron: string }>;
+    // Reveals the log file in the system file manager.
+    openFolder(): Promise<void>;
+  };
   workspace: {
     list(projectPath: string, relativePath: string): Promise<WorkspaceEntry[]>;
     read(projectPath: string, relativePath: string): Promise<WorkspaceFile>;

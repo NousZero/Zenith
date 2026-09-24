@@ -662,6 +662,62 @@ export function AuditSection() {
   );
 }
 
+const REPORT_LOG_BYTES = 32_000; // Roughly the last ~200 lines.
+
+// Local error log for "Report a problem": nothing here leaves the computer unless the user
+// copies or saves it themselves.
+export function ErrorLogSection() {
+  const [log, setLog] = useState("");
+  const [copied, setCopied] = useState(false);
+  const load = () => window.zenith.log.recent(REPORT_LOG_BYTES).then(setLog);
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const copyReport = async () => {
+    const [info, recent] = await Promise.all([
+      window.zenith.log.appInfo(),
+      window.zenith.log.recent(REPORT_LOG_BYTES),
+    ]);
+    const report = [
+      `Zenith ${info.version}`,
+      `${info.platform} ${info.osVersion}, Electron ${info.electron}`,
+      "",
+      recent || "(log is empty)",
+    ].join("\n");
+    await navigator.clipboard.writeText(report);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Section
+      title="Report a problem"
+      actions={
+        <Button size="xs" variant="ghost" onClick={() => void load()}>
+          Refresh
+        </Button>
+      }
+    >
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Errors Zenith runs into are kept in a local log file, never sent anywhere. Copy a report to
+        share what happened, or open the file directly.
+      </p>
+      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-all border border-border bg-secondary/40 p-2 font-mono text-[11px] text-muted-foreground rounded-lg">
+        {log || "Nothing logged yet."}
+      </pre>
+      <div className="flex gap-2">
+        <Button size="xs" variant="outline" onClick={() => void window.zenith.log.openFolder()}>
+          Open log folder
+        </Button>
+        <Button size="xs" variant="outline" onClick={() => void copyReport()}>
+          {copied ? "Copied" : "Copy report"}
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
 export function SandboxSection() {
   const [status, setStatus] = useState<SandboxStatus | null>(null);
   useEffect(() => {

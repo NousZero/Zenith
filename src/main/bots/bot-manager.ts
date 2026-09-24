@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { logError } from "../error-log";
 import {
   BOT_PLATFORMS,
   parseBotCommand,
@@ -255,9 +256,10 @@ export function createBotManager(deps: BotManagerDeps) {
     const key = `${platform}:${message.chatId}`;
     const next = (chatQueues.get(key) ?? Promise.resolve())
       .then(() => handle(platform, message))
-      .catch((error: unknown) =>
-        console.error(`Bot ${platform} failed to handle a message:`, error),
-      );
+      .catch((error: unknown) => {
+        console.error(`Bot ${platform} failed to handle a message:`, error);
+        logError("main", error);
+      });
     chatQueues.set(key, next);
     void next.then(() => {
       if (chatQueues.get(key) === next) chatQueues.delete(key);

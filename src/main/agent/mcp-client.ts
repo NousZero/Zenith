@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
+import { logError } from "../error-log";
 import type { McpServerConfig } from "../mcp-config";
 import type { ToolSpec } from "./tools";
 import { ToolError } from "./tools";
@@ -187,6 +188,7 @@ export function createMcpTools(deps: {
           connection = connect(config, projectPath, deps.env(), deps.clientVersion).catch(
             (error: unknown) => {
               console.error(`MCP server ${server} failed to start:`, error);
+              logError("main", error);
               connections.delete(key);
               return undefined;
             },

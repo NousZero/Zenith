@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 
+import { logError } from "./error-log";
 import { insideProject } from "./workspace";
 
 // A real terminal for the workspace panel: a pseudo-terminal, so prompts, colors, and
@@ -41,6 +42,7 @@ function loadPty(): PtyModule | undefined {
     return createRequire(from)("node-pty") as PtyModule;
   } catch (error) {
     console.error("A real terminal is unavailable (node-pty did not load):", error);
+    logError("main", error);
     return undefined;
   }
 }

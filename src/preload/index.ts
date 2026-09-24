@@ -136,6 +136,18 @@ const zenithApi: ZenithApi = {
   audit: {
     list: (limit?: number): Promise<AuditEntry[]> => ipcRenderer.invoke("audit:list", limit),
   },
+  log: {
+    report: (message: string, stack?: string): Promise<void> =>
+      ipcRenderer.invoke("log:renderer", { message, stack }),
+    recent: (maxBytes?: number): Promise<string> => ipcRenderer.invoke("log:recent", maxBytes),
+    appInfo: (): Promise<{
+      version: string;
+      platform: string;
+      osVersion: string;
+      electron: string;
+    }> => ipcRenderer.invoke("log:appInfo"),
+    openFolder: (): Promise<void> => ipcRenderer.invoke("log:openFolder"),
+  },
   workspace: {
     list: (projectPath: string, relativePath: string): Promise<WorkspaceEntry[]> =>
       ipcRenderer.invoke("workspace:list", { projectPath, relativePath }),

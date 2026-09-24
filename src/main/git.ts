@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
+import { logError } from "./error-log";
 import { unifiedDiff } from "../shared/diff";
 import type { GitStatus, GitWorktree } from "../shared/types";
 
@@ -231,6 +232,7 @@ export function createSnapshotStore(options: {
         return true;
       } catch (error) {
         console.error(`Snapshot of ${projectPath} failed:`, error);
+        logError("main", error);
         return false;
       }
     },

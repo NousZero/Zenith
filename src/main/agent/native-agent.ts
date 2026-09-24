@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
 
+import { logError } from "../error-log";
 import type {
   AgentActivity,
   AgentTodo,
@@ -431,8 +432,10 @@ export async function* runNativeAgent(
             if (request.signal?.aborted) return;
             failed = true;
             result = `Error: ${error instanceof Error ? error.message : String(error)}`;
-            if (!(error instanceof ToolError))
+            if (!(error instanceof ToolError)) {
               console.error(`Agent tool ${call.name} failed:`, error);
+              logError("main", error);
+            }
           }
           yield activity({
             ...base,

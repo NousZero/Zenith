@@ -8,17 +8,32 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { AppErrorBoundary } from "./AppErrorBoundary";
 import "./globals.css";
 import { applyTheme, storedTheme } from "./themes";
 
 // Before the first render, so the window never flashes the default palette.
 applyTheme(storedTheme());
 
+// Nothing else here catches these: forward them to the local error log in main.
+window.onerror = (message, source, lineno, colno, error) => {
+  void window.zenith.log.report(String(message), error?.stack ?? `${source}:${lineno}:${colno}`);
+};
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason as unknown;
+  void window.zenith.log.report(
+    reason instanceof Error ? reason.message : String(reason),
+    reason instanceof Error ? reason.stack : undefined,
+  );
+});
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Zenith renderer root is missing.");
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </StrictMode>,
 );

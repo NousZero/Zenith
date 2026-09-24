@@ -6,6 +6,7 @@ import {
   Notification,
   ipcMain,
   safeStorage,
+  shell,
   type IpcMainInvokeEvent,
 } from "electron";
 import { execFile } from "node:child_process";
@@ -15,6 +16,7 @@ import { isAbsolute, resolve } from "node:path";
 import { homedir } from "node:os";
 
 import { writeFileAtomic } from "./atomic-write";
+import { logError, logRendererError, logPath, readRecentLog } from "./error-log";
 
 import { createAcpAdapter } from "./acp/acp-adapter";
 import { isInside, runClaudeAgent } from "./agent/claude-agent";
@@ -142,11 +144,16 @@ export function registerIpcHandlers(options: {
   // Only the top-level Zenith page may call the main process. Frames are already blocked by the
   // content security policy; this refuses them here too.
   const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void => {
-    ipcMain.handle(channel, (event, ...args) => {
+    ipcMain.handle(channel, async (event, ...args) => {
       if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
         throw new Error("Refused a request from outside Zenith's main page.");
       }
-      return listener(event, ...args);
+      try {
+        return await listener(event, ...args);
+      } catch (error) {
+        logError(`ipc:${channel}`, error);
+        throw error;
+      }
     });
   };
 
@@ -196,6 +203,7 @@ export function registerIpcHandlers(options: {
       audit.record(entry);
     } catch (error: unknown) {
       console.error("Audit log write failed:", error);
+      logError("main", error);
     }
   };
   const screenCapture = createScreen();
@@ -271,6 +279,7 @@ export function registerIpcHandlers(options: {
     ? importLegacyJsonSessions(sessions, options.join(options.userDataPath, "sessions")).catch(
         (error: unknown) => {
           console.error("Failed to import JSON sessions:", error);
+          logError("main", error);
         },
       )
     : Promise.resolve();
@@ -944,6 +953,7 @@ export function registerIpcHandlers(options: {
     // Meaning matches are optional; if Ollama is off, keyword matches still answer.
     const semantic = await semanticIndex.search(question, 8).catch((error: unknown) => {
       console.error("Meaning-based search failed:", error);
+      logError("main", error);
       return [];
     });
     return mergeExcerpts(semantic, history.retrieve(question), 10);
@@ -976,6 +986,7 @@ export function registerIpcHandlers(options: {
       });
     } catch (error) {
       console.error("Failed to record usage:", error);
+      logError("main", error);
     }
   };
 
@@ -1224,7 +1235,10 @@ export function registerIpcHandlers(options: {
       }
     },
   });
-  void bots.startAll().catch((error: unknown) => console.error("Failed to start bots:", error));
+  void bots.startAll().catch((error: unknown) => {
+    console.error("Failed to start bots:", error);
+    logError("main", error);
+  });
 
   // Scheduled prompts run unattended as plain chats: agents with tools are refused, and no
   // project folder is passed, so nothing can change files without someone approving it.
@@ -1306,6 +1320,24 @@ export function registerIpcHandlers(options: {
 
   handle("chat:abort", async (_event, requestId: string) => {
     activeRequests.get(requestId)?.abort();
+  });
+
+  // The renderer has no Node access (contextIsolation + sandbox), so window.onerror and its
+  // error boundary forward here to be validated, capped, and appended to the local log.
+  handle("log:renderer", async (_event, payload: unknown) => {
+    logRendererError(payload);
+  });
+  handle("log:recent", async (_event, maxBytes: unknown) =>
+    readRecentLog(typeof maxBytes === "number" ? maxBytes : undefined),
+  );
+  handle("log:appInfo", async () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    osVersion: process.getSystemVersion(),
+    electron: process.versions.electron,
+  }));
+  handle("log:openFolder", async () => {
+    shell.showItemInFolder(logPath());
   });
 
   return {

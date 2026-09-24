@@ -67,6 +67,7 @@ import {
   ProvidersSection,
   SandboxSection,
   AuditSection,
+  ErrorLogSection,
 } from "./SettingsSections";
 import {
   ActivityRail,
@@ -1150,6 +1151,7 @@ export function App() {
                 <SandboxSection />
                 <McpSection />
                 <AuditSection />
+                <ErrorLogSection />
               </>,
             )}
         </div>
