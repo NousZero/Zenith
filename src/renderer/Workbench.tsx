@@ -56,7 +56,6 @@ export type ActivityId = "workspace" | "files" | "goals" | "settings";
 export function TopBar(props: {
   // Where the user is, such as ["Settings", "Providers"].
   crumbs: string[];
-  connectedCount: number;
   streaming: boolean;
   dockOpen: boolean;
   onToggleDock(): void;
@@ -103,17 +102,6 @@ export function TopBar(props: {
       </nav>
       <div className="flex items-center gap-1 pr-3">
         {props.actions}
-        <span className="mr-3 flex items-center gap-2 text-[11.5px] text-success">
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 rounded-full shadow-[0_0_0_3px_hsl(var(--success)/0.12)]",
-              props.connectedCount > 0 ? "bg-success" : "bg-muted-foreground",
-              props.streaming && "motion-safe:animate-pulse",
-            )}
-          />
-          {props.connectedCount} connected
-        </span>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

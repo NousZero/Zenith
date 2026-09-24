@@ -55,7 +55,7 @@ import { EmptyState } from "./EmptyState";
 import { useExtras } from "./extras";
 import { FilesView } from "./FilesView";
 import { GoalsView } from "./GoalsView";
-import { formatTokens, leftoverNotice } from "./lib/format";
+import { leftoverNotice } from "./lib/format";
 import { MemoryPopover } from "./MemoryPopover";
 import { Pane } from "./Pane";
 import { cn } from "./lib/utils";
@@ -394,9 +394,6 @@ export function App() {
     providerId: preferred.id,
     modelId: usesDefaultModel(preferred.kind) ? DEFAULT_CLI_MODEL_ID : "",
   };
-  const readyToolCount = connections.filter(
-    (connection) => connection.kind !== "api-key" && connection.state === "ready",
-  ).length;
 
   async function selectSession(id: string) {
     flushPendingSave();
@@ -421,10 +418,6 @@ export function App() {
     if (id === sessionId) await createSession();
   }
 
-  const totalTokens = session.panes.reduce(
-    (sum, pane) => sum + pane.promptTokens + pane.completionTokens,
-    0,
-  );
   const memoryPaneCount = session.panes.filter((pane) => pane.memoryEnabled).length;
 
   // Puts "/name " in the composer so the user can type the command's argument.
@@ -920,12 +913,6 @@ export function App() {
   );
   const sessionActions = (
     <>
-      <span className="mr-2 text-[11.5px] text-muted-foreground">
-        {formatTokens(totalTokens)} tokens
-        {session.personalityId
-          ? ` · ${PERSONALITIES.find((item) => item.id === session.personalityId)?.label ?? session.personalityId}`
-          : ""}
-      </span>
       <MemoryPopover
         memoryText={session.memoryText}
         enabledPaneCount={memoryPaneCount}
@@ -1266,7 +1253,6 @@ export function App() {
                   ? ["Goals"]
                   : ["Settings", SETTINGS_TABS.find((tab) => tab.id === settingsTab)?.label ?? ""]
           }
-          connectedCount={readyToolCount}
           streaming={streamingPaneIds.size > 0}
           dockOpen={dockOpen}
           onToggleDock={() => setDockOpen((open) => !open)}
