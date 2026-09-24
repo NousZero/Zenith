@@ -19,7 +19,9 @@ describe("formatters, language servers, and MCP tools", () => {
   });
 
   afterEach(async () => {
-    await rm(project, { recursive: true, force: true });
+    // Disposed servers get a second to exit, and Windows won't delete a running process's working
+    // folder in the meantime, so the removal retries briefly.
+    await rm(project, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
   it("formats with the project's Prettier and reports only real changes", async () => {
