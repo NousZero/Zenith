@@ -1068,6 +1068,10 @@ export function App() {
             onSaveSkill={saveAsSkill}
             onExport={(kind) => void exportSession(kind)}
             onShowContext={() => setContextPaneId(pane.id)}
+            recallPastSessions={session.recallPastSessions === true}
+            onRecallChange={(on) =>
+              setSession((current) => ({ ...current, recallPastSessions: on }))
+            }
             onStop={() => abortPane(pane.id)}
             onOpenSettings={() => openSettings("providers")}
           />

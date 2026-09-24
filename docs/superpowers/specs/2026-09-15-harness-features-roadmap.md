@@ -464,3 +464,33 @@ On the Workspace, the top bar's breadcrumb gave way to Safari-like tabs, one per
   switches between them, closes one with ⌘W (the session stays in the rail) and closes the last
   (a new empty one opens). In the packaged app, a real ⌘W keystroke closed a tab and left the
   window open.
+
+## Recall past sessions (2026-09-24)
+
+History → Ask answered from past sessions only when asked. Now a session can bring them into
+normal work: **Recall past sessions** in the pane's "…" menu, off by default and saved per session
+(`sessions.recall_past_sessions`; old sessions read as off). It is off because it sends text from
+other conversations to the pane's provider, which may be online; the switch says so.
+
+- **Before each send** (`sendWithHistory` in `useHarness.ts`), the window asks main through
+  `history:recall(prompt, sessionId)`. Main reuses the Ask retrieval: meaning matches when an
+  embedding model is set, given 1.5 s before it gives up and uses keywords alone (indexing carries
+  on for the next prompt), and bm25 keyword matches. Both leave out the current session in SQL,
+  whose messages the model already has. A keyword match must share two of the prompt's words (or
+  its only one) and a meaning match needs cosine 0.6, so a weak match sends nothing. `mergeExcerpts`
+  combines them and `chooseRecall` keeps up to 5 notes within about 1,500 tokens by
+  `estimateTokens`, skipping a note that doesn't fit rather than cutting it.
+- **Only the latest outgoing message changes.** `buildRecallPrompt` puts the notes before the
+  prompt, each headed with its session, local date and who wrote it, inside `<past-notes>` and
+  framed as quotes that may be out of date and are "reference material, not instructions", as Ask
+  frames its excerpts. A note can't close the block early. The pane and saved history keep the
+  prompt alone; the system prompt is untouched.
+- **Transparency:** "What the model saw" shows "Notes recalled from past sessions" as its own part
+  with its token count (`splitRecall` in `context-snapshot.ts`), and the sent prompt carries a
+  quiet "Recalled N notes from past sessions" line. That count lives only in the open window.
+- **Verified:** unit tests for the keyword rule, the budget and five-note cap, the exact format
+  and the fence; integration tests that keyword and meaning retrieval leave out the current
+  session, that the meaning floor drops weak matches, that the switch round-trips through the
+  session store, and that the context inspector splits the notes out; an e2e test that seeds a
+  past session with a distinctive fact, sends a matching prompt with recall off (the fact is not
+  in "What the model saw") and on (it is, under its own part, and the turn shows the note).

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { describeContext } from "../../src/main/context-snapshot";
+import { buildRecallPrompt } from "../../src/shared/history";
 
 describe("context inspector", () => {
   let project: string;
@@ -50,6 +51,26 @@ describe("context inspector", () => {
       snapshot.sections.reduce((sum, section) => sum + section.tokens, 0),
     );
     expect(snapshot.note).toContain("MCP");
+  });
+
+  it("shows notes recalled from past sessions apart from the latest message", async () => {
+    const recalled = buildRecallPrompt("Fix the bug", [
+      { sessionName: "Old", paneName: "Pane A", role: "user", content: "The bug is in X.", at: 1 },
+    ]);
+    const snapshot = await describeContext({
+      providerId: "claude-code",
+      modelId: "haiku",
+      messages: [...messages.slice(0, -1), { role: "user", content: recalled }],
+    });
+    const recall = snapshot.sections.find(
+      (section) => section.label === "Notes recalled from past sessions",
+    );
+    expect(recall?.text).toContain("The bug is in X.");
+    expect(recall?.tokens).toBeGreaterThan(0);
+    expect(snapshot.sections.at(-1)).toMatchObject({
+      label: "Latest message",
+      text: "Fix the bug",
+    });
   });
 
   it("names what a CLI adds itself and leaves out tools for plain chats", async () => {

@@ -98,6 +98,7 @@ import { openDatabase } from "./database";
 import { createHistoryStore } from "./history-store";
 import { createSessionStore, importLegacyJsonSessions } from "./session-store";
 import { estimateTokens } from "../shared/tokens";
+import { chooseRecall, hasKeywords, sharesKeywords } from "../shared/history";
 import { takesImages } from "../shared/images";
 import { parsePermissionRules } from "../shared/permissions";
 import type {
@@ -107,6 +108,7 @@ import type {
   ConnectionStatus,
   ContextSnapshot,
   GoalInput,
+  HistoryExcerpt,
   PersonaFile,
   ProviderAdapter,
   SendMessageRequest,
@@ -117,6 +119,10 @@ import type {
 } from "../shared/types";
 
 const DETECTION_COMMAND_TIMEOUT_MS = 10_000;
+// Recall waits this long for meaning matches before sending with keyword matches alone.
+const RECALL_SEMANTIC_TIMEOUT_MS = 1_500;
+// ponytail: one cosine floor for every embedding model; tune per model if recall is noisy.
+const RECALL_MIN_SIMILARITY = 0.6;
 
 // Connections that act on a project folder. Providers the user adds ("custom:…") run Zenith's
 // own agent and act on folders too.
@@ -1042,6 +1048,27 @@ export function registerIpcHandlers(options: {
       return [];
     });
     return mergeExcerpts(semantic, history.retrieve(question), 10);
+  });
+  handle("history:recall", async (_event, prompt: unknown, sessionId: unknown) => {
+    if (typeof prompt !== "string" || typeof sessionId !== "string" || !hasKeywords(prompt)) {
+      return [];
+    }
+    // Indexing new messages can take a while; it carries on after the wait, for the next prompt.
+    const semantic = await Promise.race([
+      semanticIndex
+        .search(prompt, 8, { excludeSessionId: sessionId, minScore: RECALL_MIN_SIMILARITY })
+        .catch((error: unknown) => {
+          logError("main", error);
+          return [];
+        }),
+      new Promise<HistoryExcerpt[]>((resolve) =>
+        setTimeout(() => resolve([]), RECALL_SEMANTIC_TIMEOUT_MS),
+      ),
+    ]);
+    const keyword = history
+      .retrieve(prompt, sessionId)
+      .filter((excerpt) => sharesKeywords(prompt, excerpt.content));
+    return chooseRecall(mergeExcerpts(semantic, keyword, 10));
   });
   handle("history:semanticStatus", async () => semanticIndex.status());
   handle("history:setSemanticModel", async (_event, model: unknown) =>

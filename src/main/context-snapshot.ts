@@ -1,3 +1,4 @@
+import { splitRecall } from "../shared/history";
 import { estimateTokens } from "../shared/tokens";
 import type { ChatMessage, ContextSnapshot } from "../shared/types";
 import { agentTools, projectContext } from "./agent/claude-agent";
@@ -73,12 +74,15 @@ export async function describeContext(input: {
   }
   if (latest) {
     const count = latest.images?.length ?? 0;
+    // Recalled notes ride in the latest message; shown apart so their cost is plain to see.
+    const recall = splitRecall(latest.content);
+    if (recall) sections.push(section("Notes recalled from past sessions", recall.notes));
     sections.push(
       section(
         count > 0
           ? `Latest message, with ${count} ${count === 1 ? "image" : "images"} (not counted)`
           : "Latest message",
-        latest.content,
+        recall ? recall.message : latest.content,
       ),
     );
   }

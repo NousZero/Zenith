@@ -58,6 +58,8 @@ export interface ChatMessage {
 // A message stored in a pane's conversation; the id is stable across saves.
 export interface PaneMessage extends ChatMessage {
   id: string;
+  // How many notes from past sessions went with this prompt; shown under it, never sent.
+  recalled?: number;
 }
 
 // What one request carried to the model, for the context inspector.
@@ -325,6 +327,9 @@ export interface SessionState {
   personalityId: string;
   panes: PaneState[];
   updatedAt: number;
+  // Adds matching notes from other sessions to each prompt. Off unless switched on, because it
+  // sends text from other conversations to the pane's provider.
+  recallPastSessions?: boolean;
 }
 
 export interface SearchResult {
@@ -344,6 +349,8 @@ export interface HistoryExcerpt {
   paneName: string;
   role: ChatRole;
   content: string;
+  // When the message was first saved, in milliseconds.
+  at: number;
 }
 
 export interface SemanticStatus {
@@ -437,6 +444,8 @@ export interface ZenithApi {
   history: {
     search(query: string): Promise<SearchResult[]>;
     retrieve(question: string): Promise<HistoryExcerpt[]>;
+    // Notes from sessions other than sessionId worth adding to a prompt; empty when none match.
+    recall(prompt: string, sessionId: string): Promise<HistoryExcerpt[]>;
     insights(sinceMs: number): Promise<UsageInsights>;
     semanticStatus(): Promise<SemanticStatus>;
     // Resolves to the new status, or rejects when the model can't embed text.

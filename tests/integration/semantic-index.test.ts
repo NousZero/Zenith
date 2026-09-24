@@ -75,6 +75,13 @@ describe("semantic index", () => {
     ]);
     expect(index.status()).toEqual({ model: "toy", indexed: 3, total: 3 });
 
+    // Recall leaves out the asking session and drops matches below the floor.
+    expect(await index.search("what is my pup called?", 3, { excludeSessionId: "s1" })).toEqual([]);
+    const strong = await index.search("what is my pup called?", 3, { minScore: 0.5 });
+    expect(strong.map((result) => result.content)).toEqual([
+      "My puppy is named Biscuit and loves walks.",
+    ]);
+
     await index.setModel("");
     expect(index.status().model).toBe("");
   });
@@ -86,7 +93,7 @@ describe("semantic index", () => {
     await expect(failing.setModel("missing")).rejects.toThrow("not found");
     expect(failing.status().model).toBe("");
 
-    const a = { sessionName: "S", paneName: "P", role: "user" as const, content: "a" };
+    const a = { sessionName: "S", paneName: "P", role: "user" as const, content: "a", at: 1 };
     const b = { ...a, content: "b" };
     expect(mergeExcerpts([a], [a, b], 5)).toEqual([a, b]);
   });

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/main/database";
 import { createHistoryStore } from "../../src/main/history-store";
 import { createSessionStore } from "../../src/main/session-store";
-import { HIT_END, HIT_START } from "../../src/shared/history";
+import { HIT_END, HIT_START, sharesKeywords } from "../../src/shared/history";
 import type { PaneMessage, SessionState } from "../../src/shared/types";
 
 function session(id: string, name: string, messages: PaneMessage[]): SessionState {
@@ -87,7 +87,7 @@ describe("history store", () => {
   });
 
   it("retrieves excerpts matching any meaningful word of a question", async () => {
-    const sessions = createSessionStore(db);
+    const sessions = createSessionStore(db, () => 5);
     await sessions.save(
       session("s1", "Pets", [
         { id: "m1", role: "user", content: "My dog is called Biscuit." },
@@ -101,8 +101,41 @@ describe("history store", () => {
         paneName: "Pane A",
         role: "user",
         content: "My dog is called Biscuit.",
+        at: 5,
       },
     ]);
+  });
+
+  it("recalls from other sessions only, and keeps each session's recall switch", async () => {
+    const sessions = createSessionStore(db);
+    await sessions.save({
+      ...session("current", "Deploys today", [
+        { id: "m1", role: "user", content: "Which deploy bucket do we use?" },
+      ]),
+      recallPastSessions: true,
+    });
+    await sessions.save(
+      session("past", "Release notes", [
+        { id: "m2", role: "user", content: "Our deploy bucket is named quokka-lantern-7." },
+        { id: "m3", role: "user", content: "The deploy went fine." },
+      ]),
+    );
+    const history = createHistoryStore(db);
+    const prompt = "Which deploy bucket should I use?";
+
+    const recalled = history
+      .retrieve(prompt, "current")
+      .filter((excerpt) => sharesKeywords(prompt, excerpt.content));
+    expect(recalled.map((excerpt) => [excerpt.sessionName, excerpt.content])).toEqual([
+      ["Release notes", "Our deploy bucket is named quokka-lantern-7."],
+    ]);
+    // Without a session to leave out, as Ask uses it, the current session is searched too.
+    expect(history.retrieve(prompt).map((excerpt) => excerpt.sessionName)).toContain(
+      "Deploys today",
+    );
+
+    expect((await sessions.load("current"))?.recallPastSessions).toBe(true);
+    expect((await sessions.load("past"))?.recallPastSessions).toBeUndefined();
   });
 
   it("summarizes recorded usage by connection and day", () => {
