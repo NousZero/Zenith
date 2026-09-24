@@ -464,3 +464,29 @@ On the Workspace, the top bar's breadcrumb gave way to Safari-like tabs, one per
   switches between them, closes one with ⌘W (the session stays in the rail) and closes the last
   (a new empty one opens). In the packaged app, a real ⌘W keystroke closed a tab and left the
   window open.
+
+## Continue with another assistant after an account problem (implemented 2026-09-24)
+
+When a reply fails because of the account behind a tool or provider (out of quota or credit,
+rate-limited, unpaid, signed out, no key), the error card in the pane now offers to carry on
+elsewhere instead of making you switch assistants and retype.
+
+- `isAccountProblem` in `src/shared/account-problem.ts` tells these failures apart from others by
+  their wording. It grew out of the smoke suite's `ACCOUNT_PROBLEM` pattern, which now imports it,
+  and adds what Zenith and the tools actually say: "No API key configured for …", "usage limit
+  reached", "hit your limit", `rate_limit_error`, "credit balance", "Insufficient credits",
+  "payment required". A crash, an overloaded server or an unreadable image is not one.
+- The card shows **Continue with Claude Code** (the first other ready assistant) and, when there are
+  more, an **Another assistant** menu. A line under the error says the new assistant gets this
+  conversation, not the failed tool's own tool steps. Retry and Add API key stay as they were.
+- A click switches the pane's provider and model, then resends the failed prompt with the same
+  history through `retryPane`, which now takes the provider and model to switch to. Zenith owns the
+  conversation, so nothing is retyped and nothing is lost.
+- It never happens on its own: nothing is sent to an assistant the person didn't pick. API
+  providers aren't offered, because they need a model chosen first, and that choice sets what the
+  reply costs; they stay one pick away in the composer.
+- **Verified:** unit tests with real error strings from the code and the providers, and messages
+  that must not match. An e2e test runs a first turn on the stand-in Claude, switches to the
+  stand-in Gemini (which answers as an account out of quota when `ZENITH_FAKE_QUOTA=1`), clicks
+  Continue with Claude Code, and sees Claude's reply report the two earlier messages, with the
+  prompt shown once. `launchApp` takes extra environment variables for this.

@@ -1,8 +1,10 @@
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Circle,
   ArrowDown,
+  ArrowRight,
   Ban,
   Bot,
   Brain,
@@ -32,6 +34,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { isAccountProblem } from "../shared/account-problem";
 import { denyRuleFor } from "../shared/deny-rule";
 import type { ConnectionStatus, Model, PaneState, PermissionRequest } from "../shared/types";
 import type { AgentTurn } from "./useHarness";
@@ -325,6 +328,8 @@ export function Pane(props: {
   onExport?(kind: "markdown" | "html"): void;
   onShowContext?(): void;
   onRetry(): void;
+  // Resends the failed prompt, with the same history, to another ready assistant.
+  onContinueWith?(connection: ConnectionStatus): void;
   onUndo(): void;
   onBranch(messageId: string): void;
   // Undo everything from this prompt on, files included, and hand the prompt back to edit.
@@ -398,6 +403,21 @@ export function Pane(props: {
     pane.modelId !== "" &&
     pane.messages.length > COMPACT_KEEP_MESSAGES;
   const missingKeyError = pane.lastError?.startsWith("No API key") ?? false;
+  // After an account problem, the other assistants that can answer at once. API providers are
+  // left out: they need a model chosen first, which also sets what the reply costs.
+  const continueTargets =
+    props.onContinueWith &&
+    !streaming &&
+    pane.lastError !== null &&
+    isAccountProblem(pane.lastError)
+      ? connections.filter(
+          (candidate) =>
+            candidate.state === "ready" &&
+            candidate.id !== pane.providerId &&
+            candidate.kind !== "api-key",
+        )
+      : [];
+  const [continueTarget, ...otherTargets] = continueTargets;
 
   useEffect(() => {
     let cancelled = false;
@@ -1058,7 +1078,39 @@ export function Pane(props: {
                   <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
                   <div className="flex min-w-0 flex-1 flex-col gap-2">
                     <p className="text-[13px] leading-relaxed text-foreground">{pane.lastError}</p>
-                    <div className="flex gap-1.5">
+                    {continueTarget && (
+                      <p className="text-[12px] leading-relaxed text-muted-foreground">
+                        Another assistant can pick up from here. It gets this conversation, not{" "}
+                        {provider.label}&apos;s own tool steps.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {continueTarget && (
+                        <Button size="xs" onClick={() => props.onContinueWith?.(continueTarget)}>
+                          <ArrowRight />
+                          Continue with {providerMeta(continueTarget.id).label}
+                        </Button>
+                      )}
+                      {otherTargets.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="xs" variant="outline">
+                              Another assistant
+                              <ChevronDown />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {otherTargets.map((target) => (
+                              <DropdownMenuItem
+                                key={target.id}
+                                onSelect={() => props.onContinueWith?.(target)}
+                              >
+                                Continue with {providerMeta(target.id).label}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       {missingKeyError ? (
                         <Button size="xs" variant="outline" onClick={props.onOpenSettings}>
                           <KeyRound />
