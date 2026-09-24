@@ -46,6 +46,14 @@ async function createMainWindow(): Promise<void> {
   const window = new BrowserWindow(createMainWindowOptions(join(__dirname, "preload.js")));
   mainWindow = window;
   installWebContentsGuards(window.webContents, target);
+  // Cmd+W (Ctrl+W elsewhere) closes a session tab in the window. The default menu's Close would
+  // close the window, and on Windows and Linux quit Zenith, so the menu ignores that key.
+  window.webContents.on("before-input-event", (_event, input) => {
+    const modifier = process.platform === "darwin" ? input.meta : input.control;
+    window.webContents.setIgnoreMenuShortcuts(
+      modifier && !input.shift && !input.alt && input.key.toLowerCase() === "w",
+    );
+  });
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;

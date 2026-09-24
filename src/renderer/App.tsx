@@ -34,6 +34,7 @@ import { PERSONALITIES } from "../shared/personalities";
 import { BoardDialog } from "./BoardDialog";
 import { RememberDialog } from "./RememberDialog";
 import { ScheduleDialog } from "./ScheduleDialog";
+import { SessionTabs } from "./SessionTabs";
 import { BotsDialog } from "./BotsDialog";
 import { CliOutputDialog, type CliOutput } from "./CliOutputDialog";
 import { CommandPalette } from "./CommandPalette";
@@ -71,6 +72,7 @@ import {
   AuditSection,
   ErrorLogSection,
 } from "./SettingsSections";
+import { closeTab, cycleTab, openTab, saveTabs, storedTabs, tabForDigit } from "./tabList";
 import {
   ActivityRail,
   BottomDock,
@@ -184,6 +186,8 @@ async function defaultModelFor(connection: ConnectionStatus): Promise<string> {
 
 export function App() {
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  // The sessions open as tabs in the top bar, in strip order; the open session always has one.
+  const [openTabs, setOpenTabs] = useState<readonly string[]>(() => [sessionId]);
   const [credentialsVersion, setCredentialsVersion] = useState(0);
   const [connections, setConnections] = useState<ConnectionStatus[]>([]);
   const [refreshingConnections, setRefreshingConnections] = useState(false);
@@ -337,6 +341,8 @@ export function App() {
         if (!mostRecent) return;
         const loaded = await window.zenith.sessions.load(mostRecent.id);
         if (loaded && !cancelled) {
+          // Focusing a tab saves its session, so the most recent session is the tab last open.
+          setOpenTabs(openTab(storedTabs(summaries.map((summary) => summary.id)), loaded.id));
           setSessionId(loaded.id);
           setSession(loaded);
         }
@@ -372,6 +378,10 @@ export function App() {
     }, 300);
     pendingSave.current = { session, timer };
   }, [session, restored]);
+
+  useEffect(() => {
+    if (restored) saveTabs(openTabs);
+  }, [openTabs, restored]);
 
   useEffect(() => {
     window.addEventListener("beforeunload", flushPendingSave);
@@ -435,19 +445,78 @@ export function App() {
     modelId: usesDefaultModel(preferred.kind) ? DEFAULT_CLI_MODEL_ID : "",
   };
 
+  // Every session that opens gets a tab, or focuses the one it has.
+  function showSession(id: string) {
+    setSessionId(id);
+    setOpenTabs((tabs) => openTab(tabs, id));
+  }
+
+  // A reply still running in the session being left is not stopped: it keeps streaming, and
+  // shows again if its tab is focused before it ends (see useHarness).
   async function selectSession(id: string) {
     flushPendingSave();
     const loaded = await loadSessionOrCreate(id);
-    setSessionId(id);
+    showSession(id);
     setSession(loaded);
   }
 
   async function createSession() {
     flushPendingSave();
     const id = crypto.randomUUID();
-    setSessionId(id);
+    showSession(id);
     setSession(createEmptySession(id, paneDefaults));
   }
+
+  // Closing a tab keeps its session in the rail. Closing the open tab moves to its neighbour, or
+  // to a new empty session when it was the last, so a tab is always open.
+  function closeSessionTab(id: string) {
+    const { tabs, next } = closeTab(openTabs, id);
+    setOpenTabs(tabs);
+    if (id !== sessionId) return;
+    if (next) void selectSession(next);
+    else void createSession();
+  }
+
+  function focusTab(id: string) {
+    setActivity("workspace");
+    if (id !== sessionId) void selectSession(id);
+  }
+
+  // Safari's tab keys. The listener is added once and reads the latest tabs through a ref.
+  const onTabKey = useRef<(event: KeyboardEvent) => void>(undefined);
+  useEffect(() => {
+    onTabKey.current = (event) => {
+      if (event.ctrlKey && event.key === "Tab") {
+        event.preventDefault();
+        const next = cycleTab(openTabs, sessionId, event.shiftKey ? -1 : 1);
+        if (next) focusTab(next);
+        return;
+      }
+      if (!(isMac ? event.metaKey : event.ctrlKey) || event.shiftKey || event.altKey) return;
+      // Elsewhere than macOS these are the terminal's own keys, such as Ctrl+W to delete a word.
+      if (!isMac && event.target instanceof Element && event.target.closest(".xterm")) return;
+      const key = event.key.toLowerCase();
+      if (key === "t") {
+        event.preventDefault();
+        setActivity("workspace");
+        void createSession();
+      } else if (key === "w") {
+        // Main keeps the menu from closing the window on this key (see index.ts). Tabs only show
+        // on the Workspace, so elsewhere the key does nothing rather than close an unseen tab.
+        event.preventDefault();
+        if (activity === "workspace") closeSessionTab(sessionId);
+      } else if (/^[1-9]$/.test(key)) {
+        event.preventDefault();
+        const target = tabForDigit(openTabs, Number(key));
+        if (target) focusTab(target);
+      }
+    };
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => onTabKey.current?.(event);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   async function deleteSession(id: string) {
     if (pendingSave.current?.session.id === id) {
@@ -455,7 +524,7 @@ export function App() {
       pendingSave.current = undefined;
     }
     await window.zenith.sessions.delete(id);
-    if (id === sessionId) await createSession();
+    closeSessionTab(id);
   }
 
   const memoryPaneCount = session.panes.filter((pane) => pane.memoryEnabled).length;
@@ -617,7 +686,7 @@ export function App() {
     flushPendingSave();
     const id = crypto.randomUUID();
     const messages = source.messages.slice(0, index + 1);
-    setSessionId(id);
+    showSession(id);
     setSession({
       ...session,
       id,
@@ -935,20 +1004,23 @@ export function App() {
     commands: "Prompt templates you run with /name; $ARGUMENTS is replaced with what you type.",
   };
 
-  const sessionTitle = (
-    <input
-      aria-label="Session name"
-      value={session.name}
-      onChange={(event) => setSession((current) => ({ ...current, name: event.target.value }))}
-      onBlur={() => {
+  const activeStatus =
+    pendingCount > 0 ? "waiting" : streamingPaneIds.size > 0 ? "running" : "idle";
+  const sessionTabs = (
+    <SessionTabs
+      tabs={openTabs}
+      activeId={sessionId}
+      activeName={session.name}
+      activeStatus={activeStatus}
+      onSelect={focusTab}
+      onClose={closeSessionTab}
+      onCreate={() => void createSession()}
+      onRename={(name) => setSession((current) => ({ ...current, name }))}
+      onRenameEnd={() => {
         if (session.name.trim() === "") {
           setSession((current) => ({ ...current, name: UNTITLED_SESSION }));
         }
       }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
-      }}
-      className="w-[22rem] max-w-full truncate border border-transparent bg-transparent px-1 py-0.5 font-sans text-[13px] tracking-normal text-foreground normal-case transition-colors hover:border-border focus:border-ring focus:outline-none rounded-md"
     />
   );
   const sessionActions = (
@@ -1320,7 +1392,7 @@ export function App() {
           dockOpen={dockOpen}
           onToggleDock={() => setDockOpen((open) => !open)}
           pendingCount={pendingCount}
-          title={activity === "workspace" ? sessionTitle : undefined}
+          tabs={activity === "workspace" ? sessionTabs : undefined}
           actions={activity === "workspace" ? sessionActions : undefined}
           inspector={
             <RunInspector
@@ -1345,9 +1417,7 @@ export function App() {
           onSelect={setActivity}
           activeSessionId={sessionId}
           activeSessionName={session.name}
-          activeStatus={
-            pendingCount > 0 ? "waiting" : streamingPaneIds.size > 0 ? "running" : "idle"
-          }
+          activeStatus={activeStatus}
           onSelectSession={(id) => void selectSession(id)}
           onCreateSession={() => {
             void createSession();
