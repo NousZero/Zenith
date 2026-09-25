@@ -239,7 +239,9 @@ export function createBrowserView() {
     },
     navigate(tabId: unknown, urlOrQuery: unknown): void {
       if (typeof urlOrQuery !== "string") throw new TypeError("The address must be text.");
-      const tab = find(tabId);
+      // An address typed just after a tab closed can name that tab before the window learns of the
+      // close; it belongs to the tab now showing, which is the one whose address field was used.
+      const tab = find(tabId) ?? find(activeId);
       if (!tab) throw new Error("That tab is closed.");
       const url = addressToUrl(urlOrQuery);
       tab.url = url;
