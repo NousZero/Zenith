@@ -2,7 +2,7 @@ import type { ChatMessage, TokenUsage } from "../../shared/types";
 
 // Message content in each API's own shape: plain text when there are no images, otherwise a
 // list of parts. Only images whose data the main process has loaded are sent.
-function loadedImages(message: ChatMessage) {
+export function loadedImages(message: ChatMessage) {
   return (message.images ?? []).flatMap((image) =>
     image.data ? [{ mediaType: image.mediaType, data: image.data }] : [],
   );

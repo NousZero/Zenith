@@ -40,7 +40,7 @@ describe("fetchLocalModels", () => {
 
 describe("createLocalServerAdapter", () => {
   it("streams content and reports usage from the final chunk", async () => {
-    // Shape captured from Ollama 0.30.11's /v1/chat/completions stream.
+    // Shape captured from Ollama 0.30.11's /v1/chat/completions stream, which LM Studio shares.
     const baseUrl = await startServer((_req, res) => {
       res.setHeader("Content-Type", "text/event-stream");
       const events = [
@@ -56,8 +56,8 @@ describe("createLocalServerAdapter", () => {
       res.end("data: [DONE]\n\n");
     });
     const adapter = createLocalServerAdapter({
-      id: "ollama",
-      label: "Ollama",
+      id: "lmstudio",
+      label: "LM Studio",
       baseUrl,
       startHint: "Start it.",
     });
@@ -73,6 +73,88 @@ describe("createLocalServerAdapter", () => {
       { delta: "ng", done: false },
       { delta: "", done: true, usage: { inputTokens: 24, outputTokens: 2 } },
     ]);
+  });
+
+  it("sends Ollama chats to its own endpoint with num_ctx sized to the prompt", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const baseUrl = await startServer((req, res) => {
+      let text = "";
+      req.on("data", (chunk: Buffer) => (text += chunk.toString()));
+      req.on("end", () => {
+        if (req.url === "/api/show") {
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ model_info: { "gemma2.context_length": 8192 } }));
+          return;
+        }
+        bodies.push(JSON.parse(text) as Record<string, unknown>);
+        res.setHeader("Content-Type", "application/x-ndjson");
+        res.write(
+          `${JSON.stringify({ message: { role: "assistant", content: "hi" }, done: false })}\n`,
+        );
+        res.end(
+          `${JSON.stringify({ message: { role: "assistant", content: "" }, done: true, prompt_eval_count: 5000, eval_count: 3 })}\n`,
+        );
+      });
+    });
+    const adapter = createLocalServerAdapter({
+      id: "ollama",
+      label: "Ollama",
+      baseUrl,
+      startHint: "Start it.",
+    });
+    const chunks: ChatChunk[] = [];
+    for await (const chunk of adapter.sendMessage({
+      model: "gemma2:9b",
+      // About 5,000 tokens: past the 4k default, so the next size up.
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: "x".repeat(20_000) },
+      ],
+    })) {
+      chunks.push(chunk);
+    }
+    expect(bodies[0]).toMatchObject({
+      model: "gemma2:9b",
+      stream: true,
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: "x".repeat(20_000) },
+      ],
+      options: { num_ctx: 8192 },
+    });
+    expect(chunks).toEqual([
+      { delta: "hi", done: false },
+      { delta: "", done: true, usage: { inputTokens: 5000, outputTokens: 3 } },
+    ]);
+    // Chats may use the model's window up to the ceiling; agents only Ollama's default.
+    await expect(adapter.contextLimit?.("gemma2:9b", false)).resolves.toBe(8192);
+    await expect(adapter.contextLimit?.("gemma2:9b", true)).resolves.toBe(4096);
+  });
+
+  it("reads the window LM Studio loaded a model with", async () => {
+    const baseUrl = await startServer((req, res) => {
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify(
+          req.url === "/api/v0/models/qwen3-8b"
+            ? {
+                id: "qwen3-8b",
+                state: "loaded",
+                max_context_length: 32768,
+                loaded_context_length: 4096,
+              }
+            : { id: "other", state: "not-loaded", max_context_length: 32768 },
+        ),
+      );
+    });
+    const adapter = createLocalServerAdapter({
+      id: "lmstudio",
+      label: "LM Studio",
+      baseUrl,
+      startHint: "Start it.",
+    });
+    await expect(adapter.contextLimit?.("qwen3-8b", false)).resolves.toBe(4096);
+    await expect(adapter.contextLimit?.("other", false)).resolves.toBeUndefined();
   });
 
   it("explains how to start the server when nothing is listening", async () => {

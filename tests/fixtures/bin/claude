@@ -19,6 +19,11 @@ if (!args.includes("--input-format")) {
   for await (const chunk of process.stdin) input += chunk;
   const earlier = input.split("Reply to my latest message:")[0].match(/^<(user|assistant)>$/gm) ?? [];
   const text = `Claude Code read ${earlier.length} earlier messages.`;
+  // FAKE_CLAUDE_CHAT_LOG gets each chat request's size, so a test can check what went out fits.
+  if (process.env.FAKE_CLAUDE_CHAT_LOG) {
+    const system = args.find((arg) => arg.startsWith("--system-prompt="))?.length ?? 0;
+    appendFileSync(process.env.FAKE_CLAUDE_CHAT_LOG, `${JSON.stringify({ chars: input.length + system })}\n`);
+  }
   out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } });
   out({ type: "result", subtype: "success", usage: { input_tokens: 40, output_tokens: 8 } });
 }

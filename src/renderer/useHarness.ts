@@ -9,11 +9,16 @@ import {
   undoLastExchange,
 } from "../shared/conversation";
 import {
-  buildCompactionPrompt,
   buildSynthesisPrompt,
   COMPACT_KEEP_MESSAGES,
-  compactMessages,
+  COMPACT_THRESHOLD,
+  contextLimit,
+  contextUsed,
+  estimateMessages,
+  type FitResult,
+  fitHistory,
   shouldCompact,
+  withPanePatch,
 } from "../shared/context";
 import { buildFanOutMessages } from "../shared/fan-out";
 import { buildRecallPrompt } from "../shared/history";
@@ -31,6 +36,8 @@ import type {
   SessionState,
   TokenUsage,
 } from "../shared/types";
+import { formatTokens } from "./lib/format";
+import { providerMeta } from "./providers";
 
 // Electron prefixes errors thrown in the main process; the pane only needs the reason.
 export function describeSendError(error: unknown): string {
@@ -66,10 +73,37 @@ export function createPane(id: string, defaults: PaneDefaults = FALLBACK_PANE_DE
 
 export const NEW_SESSION_NAME = "New session";
 
+// Shown with the summary when Zenith had to shorten a conversation before sending it.
+export function fitNotice(fit: FitResult, tokens: number, limit: number, label: string): string {
+  const requests = `${fit.requests} ${fit.requests === 1 ? "request" : "requests"}`;
+  const kept =
+    fit.kept === 1 ? "the last message is kept" : `the last ${fit.kept} messages are kept`;
+  return [
+    `This conversation (~${formatTokens(tokens)} tokens) is too long for ${label}'s ${formatTokens(limit)} window.`,
+    `Zenith summarised the earlier part (${fit.summarized} ${fit.summarized === 1 ? "message" : "messages"}) to fit, which took ${requests} to ${label} (~${formatTokens(fit.tokensSent)} tokens); ${kept} word for word.`,
+    fit.truncated
+      ? "The newest message was too long even on its own, so its middle was left out."
+      : "",
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
+}
+
 interface LoadedAgent {
   name: string;
   body: string;
   tools?: string[];
+}
+
+// Everything a pane's requests carry before the conversation: persona, agent and plan mode.
+function paneInstructions(personaText: string, pane: PaneState, agent?: LoadedAgent): string {
+  return [
+    personaText,
+    agent ? `You are acting as the "${agent.name}" agent:\n${agent.body}` : "",
+    pane.planMode ? PLAN_MODE_INSTRUCTIONS : "",
+  ]
+    .filter((part) => part.trim() !== "")
+    .join("\n\n");
 }
 
 // What an agent did during a pane's latest reply in a project folder.
@@ -120,7 +154,7 @@ export function useHarness(
   const updatePane = useCallback((paneId: string, patch: Partial<PaneState>) => {
     setSession((current) => ({
       ...current,
-      panes: current.panes.map((pane) => (pane.id === paneId ? { ...pane, ...patch } : pane)),
+      panes: current.panes.map((pane) => (pane.id === paneId ? withPanePatch(pane, patch) : pane)),
     }));
   }, []);
 
@@ -289,11 +323,16 @@ export function useHarness(
       if (!chunk.delta && !chunk.done) return;
       setSession((current) => ({
         ...current,
-        panes: current.panes.map((pane) =>
-          pane.id === paneId
+        panes: current.panes.map((pane) => {
+          if (pane.id !== paneId) return pane;
+          // Counts from a model the pane has since been switched away from describe the wrong
+          // window.
+          const sameModel =
+            pane.providerId === state.turn.providerId && pane.modelId === state.turn.modelId;
+          return sameModel
             ? withReply(pane, assistantId, text, chunk.done, reported, chunk.contextWindow)
-            : pane,
-        ),
+            : withReply(pane, assistantId, text, chunk.done, undefined, undefined);
+        }),
       }));
     });
     unsubscribeRef.current = () => {
@@ -347,18 +386,11 @@ export function useHarness(
       setRunningSessions(
         new Map([...streamState.current].map(([id, entry]) => [id, entry.sessionId])),
       );
-      const paneInstructions = [
-        personaText,
-        agent ? `You are acting as the "${agent.name}" agent:\n${agent.body}` : "",
-        pane.planMode ? PLAN_MODE_INSTRUCTIONS : "",
-      ]
-        .filter((part) => part.trim() !== "")
-        .join("\n\n");
       const outgoing = buildFanOutMessages(
         { ...pane, messages: history },
         outgoingPrompt,
         session.memoryText,
-        paneInstructions,
+        paneInstructions(personaText, pane, agent),
         images,
       );
       setAgentTurns((current) =>
@@ -397,7 +429,7 @@ export function useHarness(
                     ...(recalled > 0 ? { recalled } : {}),
                   },
                 ],
-                promptTokens: estimateTokens(outgoing.map((m) => m.content).join("\n")),
+                promptTokens: estimateMessages(outgoing),
                 lastError: null,
               }
             : candidate,
@@ -442,27 +474,52 @@ export function useHarness(
   const [compactingPaneIds, setCompactingPaneIds] = useState<ReadonlySet<string>>(new Set());
   const compacting = useRef(new Set<string>());
 
-  // Replaces all but the most recent messages with a summary written by the pane's own model.
+  // The window of the model the pane sends to next. Local servers are asked; the pane keeps what
+  // they say, so its footer shows the same limit.
+  const resolveLimit = useCallback(
+    async (pane: PaneState): Promise<number> => {
+      const live = await window.zenith.chat
+        .contextLimit({
+          providerId: pane.providerId,
+          modelId: pane.modelId,
+          projectPath: pane.projectPath,
+        })
+        .catch(() => null);
+      if (live !== null && live !== pane.contextWindow) {
+        updatePane(pane.id, { contextWindow: live });
+      }
+      return live ?? contextLimit(pane);
+    },
+    [updatePane],
+  );
+
+  // Shortens messages to about room tokens with summaries written by the pane's own model, in
+  // requests that each fit its window of limit tokens.
   const summarize = useCallback(
-    async (pane: PaneState, messages: PaneMessage[]): Promise<PaneMessage[]> => {
+    async (
+      pane: PaneState,
+      messages: PaneMessage[],
+      limit: number,
+      room: number,
+    ): Promise<FitResult> => {
       // The summary replaces history the agent's session still holds, so it can't be continued.
       lastTurns.current.delete(pane.id);
       compacting.current.add(pane.id);
       setCompactingPaneIds(new Set(compacting.current));
       try {
-        const summary = await window.zenith.chat.complete({
-          sessionId: session.id,
-          providerId: pane.providerId,
-          modelId: pane.modelId,
-          messages: [
-            {
-              role: "user",
-              content: buildCompactionPrompt(messages.slice(0, -COMPACT_KEEP_MESSAGES)),
-            },
-          ],
-        });
-        if (summary.trim() === "") throw new Error("The model returned an empty summary.");
-        return compactMessages(messages, summary, () => crypto.randomUUID());
+        return await fitHistory(
+          messages,
+          room,
+          limit,
+          (prompt) =>
+            window.zenith.chat.complete({
+              sessionId: session.id,
+              providerId: pane.providerId,
+              modelId: pane.modelId,
+              messages: [{ role: "user", content: prompt }],
+            }),
+          () => crypto.randomUUID(),
+        );
       } finally {
         compacting.current.delete(pane.id);
         setCompactingPaneIds(new Set(compacting.current));
@@ -518,16 +575,6 @@ export function useHarness(
         });
         return;
       }
-      let messages = history;
-      if (shouldCompact({ ...pane, messages: history })) {
-        abortPane(pane.id);
-        try {
-          messages = await summarize(pane, history);
-        } catch (error: unknown) {
-          // Send anyway; the provider reports it if the context really overflows.
-          console.error(`Automatic compaction failed for pane ${pane.id}`, error);
-        }
-      }
       // Recall sends text from other conversations to this provider, so only when switched on.
       // Notes go into this one outgoing message; the pane and saved history keep the prompt alone.
       const current = sessionRef.current;
@@ -537,17 +584,74 @@ export function useHarness(
             return [];
           })
         : [];
-      startTurn(
-        pane,
-        messages,
-        prompt,
-        buildRecallPrompt(outgoingPrompt, notes),
-        agent,
-        images,
-        notes.length,
-      );
+      const sentPrompt = buildRecallPrompt(outgoingPrompt, notes);
+      // What the request would cost with a given history, as startTurn will build it.
+      const cost = (candidate: PaneMessage[]) =>
+        estimateMessages(
+          buildFanOutMessages(
+            { ...pane, messages: candidate },
+            sentPrompt,
+            current.memoryText,
+            paneInstructions(personaText, pane, agent),
+            images,
+          ),
+        );
+      const limit = await resolveLimit(pane);
+      const budget = Math.floor(limit * COMPACT_THRESHOLD);
+      const estimate = cost(history);
+      let messages = history;
+      if (shouldCompact({ ...pane, messages: history }, estimate, limit)) {
+        abortPane(pane.id);
+        const label = providerMeta(pane.providerId).label;
+        try {
+          const room = budget - cost([]);
+          if (room <= 0) {
+            throw new Error(
+              `the new message and instructions alone are ~${formatTokens(cost([]))} tokens`,
+            );
+          }
+          const fit = await summarize(pane, history, limit, room);
+          if (cost(fit.messages) > budget) {
+            throw new Error("the shortened conversation still doesn't fit");
+          }
+          const [summary, ...rest] = fit.messages;
+          messages =
+            summary && fit.summarized > 0
+              ? [
+                  {
+                    ...summary,
+                    notice: fitNotice(fit, Math.max(estimate, contextUsed(pane)), limit, label),
+                  },
+                  ...rest,
+                ]
+              : fit.messages;
+        } catch (error: unknown) {
+          console.error(`Automatic compaction failed for pane ${pane.id}`, error);
+          // Only the last turn's counts were over, so the request itself still fits.
+          if (estimate <= budget) {
+            messages = history;
+          } else {
+            // Never send what is known not to fit. The prompt stays, so Retry can send it again.
+            const reason = describeSendError(error).replace(/\.$/, "");
+            updatePane(pane.id, {
+              messages: [
+                ...history,
+                {
+                  id: crypto.randomUUID(),
+                  role: "user",
+                  content: prompt,
+                  ...(images.length ? { images } : {}),
+                },
+              ],
+              lastError: `This conversation (~${formatTokens(estimate)} tokens) is too long for ${label}'s ${formatTokens(limit)} window, and Zenith couldn't shorten it: ${reason}. Nothing was sent.`,
+            });
+            return;
+          }
+        }
+      }
+      startTurn(pane, messages, prompt, sentPrompt, agent, images, notes.length);
     },
-    [abortPane, summarize, startTurn, loadAgent, updatePane],
+    [abortPane, summarize, startTurn, loadAgent, updatePane, resolveLimit, personaText],
   );
 
   const compactPane = useCallback(
@@ -556,7 +660,13 @@ export function useHarness(
       if (!pane?.modelId || pane.messages.length <= COMPACT_KEEP_MESSAGES) return;
       if (streamState.current.has(paneId) || compacting.current.has(paneId)) return;
       try {
-        const messages = await summarize(pane, pane.messages);
+        const limit = await resolveLimit(pane);
+        const { messages } = await summarize(
+          pane,
+          pane.messages,
+          limit,
+          Math.floor(limit * COMPACT_THRESHOLD),
+        );
         const lastId = pane.messages.at(-1)?.id;
         setSession((current) => ({
           ...current,
@@ -577,7 +687,7 @@ export function useHarness(
         updatePane(paneId, { lastError: `Could not compact: ${describeSendError(error)}` });
       }
     },
-    [session.panes, summarize, updatePane],
+    [session.panes, summarize, updatePane, resolveLimit],
   );
 
   // Mixture of Agents: every included pane's latest answer goes to the aggregator pane's model,
@@ -629,7 +739,7 @@ export function useHarness(
   const retryPane = useCallback(
     (paneId: string, switchTo?: Partial<PaneState>) => {
       const found = session.panes.find((candidate) => candidate.id === paneId);
-      const pane = found && { ...found, ...switchTo };
+      const pane = found && withPanePatch(found, switchTo ?? {});
       const target = pane && retryTarget(pane.messages);
       if (pane && switchTo) updatePane(paneId, switchTo);
       if (pane && target) {

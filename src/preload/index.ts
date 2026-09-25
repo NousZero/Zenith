@@ -334,6 +334,11 @@ const zenithApi: ZenithApi = {
       modelId: string;
       messages: ChatMessage[];
     }): Promise<string> => ipcRenderer.invoke("chat:complete", request),
+    contextLimit: (request: {
+      providerId: string;
+      modelId: string;
+      projectPath: string | null;
+    }): Promise<number | null> => ipcRenderer.invoke("chat:contextLimit", request),
     // What the pane's last request carried to the model, or null before the first one.
     context: (paneId: string): Promise<ContextSnapshot | null> =>
       ipcRenderer.invoke("chat:context", paneId),

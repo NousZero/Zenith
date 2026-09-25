@@ -651,3 +651,45 @@ blank tab with the address field focused.
   a `target=_blank` link opened the tab beside the page, real ⌘L, ⌘T and ⌘W keystrokes worked with
   the page focused and left the window open, Settings drew over the hidden page, and after a
   restart only the open tab's page was requested from the server.
+
+## Fitting a conversation to the model it goes to (implemented 2026-09-25)
+
+Zenith owns the conversation, so it can go to any assistant, but not every assistant can hold it:
+800k tokens built up on Gemini's 1M window don't fit Claude Code's 200k, and a local Ollama model
+has a few thousand. Before this, the limit was the window the _previous_ model reported, the size
+was the previous turn's count, local servers had no limit at all, and compaction sent everything
+older in one request that could overflow too.
+
+- **The limit is the receiving model's.** `withPanePatch` (`shared/context.ts`) clears the reported
+  window and replaces the token counts with an estimate of the history whenever the provider or
+  model changes, from the picker, "Continue with" or retry; a reply that ends after a switch keeps
+  its counts to itself. Unknown windows are conservative: 4,096 for a local server, 128k otherwise.
+- **The size is what is about to go out:** system text, history and prompt, estimated before
+  sending, or the last turn's count when that is larger (it is from the same model after the
+  reset above).
+- **Fit before sending.** Past 80% of the window, `fitHistory` keeps up to the last four messages
+  word for word (as many as fit in three quarters of the room; the newest alone is cut down in the
+  middle, with a marker, if it has to be) and summarises the rest with the pane's own model in
+  chunks of at most half its window, then merges the summaries two or more at a time until one is
+  left. Each summary is capped so every merge round at least halves them. If the result still
+  doesn't fit, or summarising fails while the request is over the limit, nothing is sent: the pane
+  says why and keeps the prompt for Retry. Manual compaction uses the same path.
+- **The person is told.** The summary carries a notice (in memory only, never sent): "This
+  conversation (~300k tokens) is too long for Claude Code's 200k window. Zenith summarised the
+  earlier part (20 messages) to fit, which took 4 requests to Claude Code (~250k tokens); the last
+  4 messages are kept word for word." The compaction status shows while it runs, and the
+  "Continue with" hint says in advance when the conversation is too long for that assistant.
+- **Ollama** chats now use its own `/api/chat`, because its OpenAI-style endpoint can't set
+  `num_ctx` and Ollama silently drops the start of a longer prompt. `num_ctx` doubles from 4,096 to
+  fit the prompt plus 2,048 for the reply, up to the model's `context_length` from `/api/show` and a
+  32k ceiling for memory (`OLLAMA_MAX_CONTEXT`); that capped figure is the pane's limit. Agents in
+  a project folder still use the OpenAI-style endpoint, so their limit is Ollama's 4,096 default.
+- **LM Studio** reports `loaded_context_length` from `/api/v0/models/<id>`; a model not loaded yet
+  uses the 4,096 default.
+- Continuing the agent's own session still falls back to the full transcript after any fitting.
+- **Verified:** unit tests for the limit after a switch, the estimate, chunking, fitting a history
+  far bigger than the window, multi-round merges, a single huge message, the notice and `num_ctx`
+  sizing; integration tests for Ollama's request body (`options.num_ctx`), its limits for chats and
+  agents, and LM Studio's loaded window against local HTTP servers; an e2e test that seeds ~300k
+  tokens on Gemini, switches to the stand-in Claude Code, and checks the notice, that the reply saw
+  the last four messages, and that every request the stand-in received fit its window.
