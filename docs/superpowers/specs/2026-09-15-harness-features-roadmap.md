@@ -589,3 +589,27 @@ sends only the new message.
   which the next turn sends the transcript. A live two-turn Claude Code check (haiku, agent mode)
   continued the same session: the first turn wrote 13,638 tokens to the cache, the second wrote 92
   and read the rest from it.
+
+## File tabs on the Files page (implemented 2026-09-25)
+
+The Files page kept one file open at a time. Now each file opens in a tab above the reader
+(`FilesView.tsx`), with the list rules shared with the session tabs (`tabList.ts`) and the few
+that differ in `fileTabs.ts`.
+
+- Every click in the tree opens the file in a tab, or focuses the tab it already has; a link in a
+  Markdown page does the same. There is no VS Code-style preview tab that a single click replaces.
+- The strip looks like the session tabs: compact, the open tab raised, a close button, middle-click
+  to close, and a scrolling strip that keeps the open tab in view. A tab shows the file name, and
+  its folder too when another open file has the same name.
+- Every open tab stays mounted and the others are only made invisible, so each keeps its own view
+  (Read, Preview, Source), preview width and scroll position, inside a preview too, without saving
+  and restoring them. Many open previews each keep their frame alive.
+- Keys while the Files page shows: ⌘W / Ctrl+W closes the file tab, ⌘1–⌘8 that tab and ⌘9 the
+  last, Ctrl+Tab and Ctrl+Shift+Tab cycle. App.tsx's tab-key handler leaves every key but ⌘T to
+  the Files page when it is open, so they never reach the session tabs.
+- The tabs, their order and the open one are kept per project folder in `localStorage`
+  (`zenith.fileTabs:<folder>`). On restore, a file deleted since loses its tab, found by listing
+  each file's folder. Switching the project folder shows that folder's own tabs.
+- **Verified:** unit tests for closing, labels and storage; an e2e test that opens three files,
+  switches between them, closes one with ⌘W, switches with ⌘2 and Ctrl+Tab, then restarts with a
+  file deleted and finds the rest of the tabs as they were.

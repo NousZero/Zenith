@@ -9,18 +9,28 @@ import {
   Search,
   Smartphone,
   Tablet,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { previewUrl } from "../shared/preview";
 import type { WorkspaceEntry, WorkspaceFile } from "../shared/types";
 import { Button } from "./components/ui/button";
+import {
+  closeFileTab,
+  fileTabLabel,
+  saveFileTabs,
+  storedFileTabs,
+  type FileTabs,
+} from "./fileTabs";
 import { cn } from "./lib/utils";
 import { Markdown } from "./Markdown";
+import { cycleTab, openTab, tabForDigit } from "./tabList";
 
 const MARKDOWN = /\.(md|markdown|mdx)$/i;
 const WEB_PAGE = /\.(html?|svg)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i;
+const isMac = navigator.userAgent.includes("Mac");
 
 type FileView = "read" | "preview" | "source";
 type Width = { id: string; label: string; px: number | null; icon: typeof Monitor };
@@ -159,23 +169,31 @@ function FileTree(props: {
   return <ul aria-label="Project files">{render("", 0)}</ul>;
 }
 
-// The Files page: a project tree beside a full-height reader. Markdown reads as a page, web pages
-// and images render in a sandboxed frame that cannot reach the network, and anything else is text.
-export function FilesView(props: { projectPath: string }) {
-  const [path, setPath] = useState<string | null>(null);
+// One open file, with its own view, width and scroll position. Every open tab stays mounted and
+// the others are only made invisible, so switching back finds the file exactly where it was left,
+// scroll inside a preview included, without saving and restoring any of it.
+function FilePanel(props: {
+  projectPath: string;
+  path: string;
+  active: boolean;
+  onOpen(path: string): void;
+}) {
+  const { path } = props;
   const [file, setFile] = useState<WorkspaceFile | null>(null);
-  const [view, setView] = useState<FileView>("read");
+  const [view, setView] = useState<FileView>(() =>
+    MARKDOWN.test(path) ? "read" : WEB_PAGE.test(path) || IMAGE.test(path) ? "preview" : "source",
+  );
   const [width, setWidth] = useState<string>("full");
-  const [filter, setFilter] = useState("");
   const [reloads, setReloads] = useState(0);
   const [error, setError] = useState("");
+  const page = useRef<HTMLDivElement>(null);
 
-  const isMarkdown = path !== null && MARKDOWN.test(path);
-  const isWebPage = path !== null && WEB_PAGE.test(path);
-  const isImage = path !== null && IMAGE.test(path);
+  const isMarkdown = MARKDOWN.test(path);
+  const isWebPage = WEB_PAGE.test(path);
+  const isImage = IMAGE.test(path);
 
   useEffect(() => {
-    if (path === null || (view !== "read" && view !== "source")) return;
+    if (view !== "read" && view !== "source") return;
     let cancelled = false;
     window.zenith.workspace
       .read(props.projectPath, path)
@@ -192,15 +210,6 @@ export function FilesView(props: { projectPath: string }) {
     };
   }, [props.projectPath, path, view, reloads]);
 
-  function open(next: string) {
-    setPath(next);
-    setFile(null);
-    setError("");
-    setView(
-      MARKDOWN.test(next) ? "read" : WEB_PAGE.test(next) || IMAGE.test(next) ? "preview" : "source",
-    );
-  }
-
   const views: { id: FileView; label: string }[] = [
     ...(isMarkdown ? [{ id: "read" as const, label: "Read" }] : []),
     ...(isWebPage || isImage ? [{ id: "preview" as const, label: "Preview" }] : []),
@@ -212,6 +221,293 @@ export function FilesView(props: { projectPath: string }) {
   );
   const lines = file?.content?.split("\n") ?? [];
   const frameWidth = WIDTHS.find((entry) => entry.id === width)?.px ?? null;
+
+  return (
+    <div
+      className={cn(
+        "col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col",
+        !props.active && "invisible",
+      )}
+    >
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+          {folderName(props.projectPath)} / {path}
+        </p>
+        {view === "preview" && isWebPage && (
+          <div className="flex items-center gap-1">
+            {WIDTHS.map((entry) => (
+              <Button
+                key={entry.id}
+                variant={width === entry.id ? "secondary" : "ghost"}
+                size="icon-xs"
+                aria-label={entry.label}
+                aria-pressed={width === entry.id}
+                onClick={() => setWidth(entry.id)}
+              >
+                <entry.icon />
+              </Button>
+            ))}
+          </div>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Reload file"
+          onClick={() => setReloads((value) => value + 1)}
+        >
+          <RefreshCw />
+        </Button>
+        {views.length > 1 && (
+          <div role="tablist" aria-label="File view" className="flex gap-1">
+            {views.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                role="tab"
+                aria-selected={view === entry.id}
+                onClick={() => setView(entry.id)}
+                className={cn(
+                  "cursor-pointer border px-1.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
+                  view === entry.id
+                    ? "border-primary/50 bg-primary/[0.08] text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="p-3 text-xs text-danger">
+          {error}
+        </p>
+      )}
+      {view === "preview" ? (
+        <div className="flex min-h-0 flex-1 justify-center overflow-auto bg-muted/40 p-2">
+          <iframe
+            key={`${props.projectPath}:${path}:${reloads}`}
+            title={`Preview of ${path}`}
+            src={previewUrl(props.projectPath, path)}
+            sandbox="allow-scripts allow-same-origin"
+            style={frameWidth ? { width: frameWidth } : undefined}
+            className={cn(
+              "min-h-0 flex-1 border border-border bg-white rounded-md",
+              frameWidth && "flex-none",
+            )}
+          />
+        </div>
+      ) : view === "read" && file !== null && file.content !== null ? (
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div ref={page} className="min-h-0 overflow-y-auto px-8 py-6">
+            <div className="mx-auto max-w-3xl">
+              <Markdown
+                content={file.content}
+                onOpenLink={(target) => props.onOpen(resolveRelative(path, target))}
+                resolveImage={(target) =>
+                  /^[a-z]+:/i.test(target)
+                    ? undefined
+                    : previewUrl(props.projectPath, resolveRelative(path, target))
+                }
+              />
+            </div>
+          </div>
+          {outline.length > 1 && (
+            <nav
+              aria-label="Outline"
+              className="hidden min-h-0 overflow-y-auto border-l border-border p-4 xl:block"
+            >
+              <p className="eyebrow mb-2 text-muted-foreground">Outline</p>
+              <ul className="flex flex-col gap-1">
+                {outline.map((heading, index) => (
+                  <li key={`${index}-${heading.id}`}>
+                    <button
+                      type="button"
+                      // Looked up inside this file's page: another open Markdown tab can have a
+                      // heading with the same id.
+                      onClick={() =>
+                        page.current
+                          ?.querySelector(`#${CSS.escape(heading.id)}`)
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
+                      style={{ paddingLeft: `${(heading.level - 1) * 10}px` }}
+                      className="w-full cursor-pointer truncate text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {heading.text}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
+        </div>
+      ) : file?.content === null ? (
+        <p className="p-4 text-xs text-muted-foreground">{file.reason}</p>
+      ) : file === null ? (
+        <p className="p-4 text-xs text-muted-foreground">Opening…</p>
+      ) : (
+        <pre className="min-h-0 flex-1 overflow-auto py-3 font-mono text-xs leading-relaxed">
+          {lines.map((line, index) => (
+            <div key={index} className="flex">
+              <span className="w-12 shrink-0 select-none pr-4 text-right text-muted-foreground/60">
+                {index + 1}
+              </span>
+              <span className="whitespace-pre pr-4">{line || " "}</span>
+            </div>
+          ))}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// The open files as compact tabs above the reader, styled like the session tabs in the top bar.
+function FileTabStrip(props: {
+  projectPath: string;
+  tabs: readonly string[];
+  active: string | null;
+  onSelect(path: string): void;
+  onClose(path: string): void;
+}) {
+  const activeTab = useRef<HTMLButtonElement>(null);
+
+  // Keep the open tab in view when many tabs make the strip scroll.
+  useEffect(() => {
+    activeTab.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [props.tabs, props.active]);
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Open files"
+      className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 py-1 [scrollbar-width:none]"
+    >
+      {props.tabs.map((path) => {
+        const active = path === props.active;
+        const { name, folder } = fileTabLabel(props.tabs, path);
+        return (
+          <div
+            key={path}
+            // A middle click closes the tab, as in a browser.
+            onAuxClick={(event) => {
+              if (event.button === 1) props.onClose(path);
+            }}
+            className={cn(
+              "group relative flex h-7 w-44 min-w-24 shrink-0 items-center rounded-md text-[12px] transition-[background-color,box-shadow,color] duration-200",
+              active
+                ? "bg-popover/80 text-foreground shadow-[inset_0_1px_0_hsl(0_0%_100%/0.07),0_0_0_0.5px_hsl(var(--border)),0_1px_3px_rgb(0_0_0/0.3)] backdrop-blur-xl"
+                : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+            )}
+          >
+            <button
+              type="button"
+              role="tab"
+              ref={active ? activeTab : undefined}
+              aria-selected={active}
+              title={path}
+              onClick={() => props.onSelect(path)}
+              className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md pl-2.5 pr-6 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="max-w-full shrink-0 truncate">{name}</span>
+              {folder !== null && (
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  {folder || folderName(props.projectPath)}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              aria-label={`Close ${path}`}
+              title={`Close tab (${isMac ? "⌘" : "Ctrl+"}W)`}
+              onClick={() => props.onClose(path)}
+              className={cn(
+                "absolute right-1 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                active ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
+            >
+              <X className="size-3" aria-hidden />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Which of these files still exist, checked by listing each one's folder, so a restored tab for a
+// file deleted since is dropped instead of opening to an error.
+async function existingFiles(projectPath: string, paths: readonly string[]): Promise<string[]> {
+  const folders = [...new Set(paths.map((path) => path.split("/").slice(0, -1).join("/")))];
+  const listed = await Promise.all(
+    folders.map((folder) =>
+      window.zenith.workspace.list(projectPath, folder).catch(() => [] as WorkspaceEntry[]),
+    ),
+  );
+  const files = new Set(
+    listed.flat().flatMap((entry) => (entry.kind === "file" ? [entry.path] : [])),
+  );
+  return paths.filter((path) => files.has(path));
+}
+
+// The Files page: a project tree beside a full-height reader with a tab for each open file.
+// Markdown reads as a page, web pages and images render in a sandboxed frame that cannot reach the
+// network, and anything else is text. App.tsx keys this by project folder, so each folder starts
+// from its own saved tabs.
+export function FilesView(props: { projectPath: string }) {
+  const [state, setState] = useState<FileTabs>(() => storedFileTabs(props.projectPath));
+  const [filter, setFilter] = useState("");
+
+  useEffect(() => saveFileTabs(props.projectPath, state), [props.projectPath, state]);
+
+  // Tabs restored from the last run open at once; any whose file is gone since closes quietly.
+  useEffect(() => {
+    const restored = storedFileTabs(props.projectPath).tabs;
+    let cancelled = false;
+    void existingFiles(props.projectPath, restored).then((existing) => {
+      if (cancelled) return;
+      const missing = restored.filter((path) => !existing.includes(path));
+      setState((current) => missing.reduce(closeFileTab, current));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.projectPath]);
+
+  // Every click in the tree opens a tab, or focuses the one the file already has.
+  function open(path: string) {
+    setState((current) => ({ tabs: openTab(current.tabs, path), active: path }));
+  }
+  function select(path: string | null) {
+    if (path) setState((current) => ({ ...current, active: path }));
+  }
+  function close(path: string) {
+    setState((current) => closeFileTab(current, path));
+  }
+
+  // The same tab keys as the session tabs. This page is only mounted while it shows, and App.tsx
+  // leaves these keys to it here, so they never reach the session tabs.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key === "Tab") {
+        event.preventDefault();
+        select(cycleTab(state.tabs, state.active ?? "", event.shiftKey ? -1 : 1));
+        return;
+      }
+      if (!(isMac ? event.metaKey : event.ctrlKey) || event.shiftKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "w") {
+        // Main keeps the menu from closing the window on this key (see index.ts).
+        event.preventDefault();
+        if (state.active) close(state.active);
+      } else if (/^[1-9]$/.test(key)) {
+        event.preventDefault();
+        select(tabForDigit(state.tabs, Number(key)));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [state]);
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] md:grid-cols-[260px_minmax(0,1fr)]">
@@ -230,12 +526,17 @@ export function FilesView(props: { projectPath: string }) {
           />
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-1.5">
-          <FileTree projectPath={props.projectPath} filter={filter} selected={path} onOpen={open} />
+          <FileTree
+            projectPath={props.projectPath}
+            filter={filter}
+            selected={state.active}
+            onOpen={open}
+          />
         </div>
       </aside>
 
       <section aria-label="File" className="flex min-h-0 min-w-0 flex-col bg-background">
-        {path === null ? (
+        {state.tabs.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <FolderOpen className="size-8 text-muted-foreground" aria-hidden />
             <p className="font-serif text-xl font-semibold tracking-tight">Read your project</p>
@@ -247,133 +548,24 @@ export function FilesView(props: { projectPath: string }) {
           </div>
         ) : (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-              <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-                {folderName(props.projectPath)} / {path}
-              </p>
-              {view === "preview" && isWebPage && (
-                <div className="flex items-center gap-1">
-                  {WIDTHS.map((entry) => (
-                    <Button
-                      key={entry.id}
-                      variant={width === entry.id ? "secondary" : "ghost"}
-                      size="icon-xs"
-                      aria-label={entry.label}
-                      aria-pressed={width === entry.id}
-                      onClick={() => setWidth(entry.id)}
-                    >
-                      <entry.icon />
-                    </Button>
-                  ))}
-                </div>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Reload file"
-                onClick={() => setReloads((value) => value + 1)}
-              >
-                <RefreshCw />
-              </Button>
-              {views.length > 1 && (
-                <div role="tablist" aria-label="File view" className="flex gap-1">
-                  {views.map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={view === entry.id}
-                      onClick={() => setView(entry.id)}
-                      className={cn(
-                        "cursor-pointer border px-1.5 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md",
-                        view === entry.id
-                          ? "border-primary/50 bg-primary/[0.08] text-foreground"
-                          : "border-border text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {error && (
-              <p role="alert" className="p-3 text-xs text-danger">
-                {error}
-              </p>
-            )}
-            {view === "preview" ? (
-              <div className="flex min-h-0 flex-1 justify-center overflow-auto bg-muted/40 p-2">
-                <iframe
-                  key={`${props.projectPath}:${path}:${reloads}`}
-                  title={`Preview of ${path}`}
-                  src={previewUrl(props.projectPath, path)}
-                  sandbox="allow-scripts allow-same-origin"
-                  style={frameWidth ? { width: frameWidth } : undefined}
-                  className={cn(
-                    "min-h-0 flex-1 border border-border bg-white rounded-md",
-                    frameWidth && "flex-none",
-                  )}
+            <FileTabStrip
+              projectPath={props.projectPath}
+              tabs={state.tabs}
+              active={state.active}
+              onSelect={select}
+              onClose={close}
+            />
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
+              {state.tabs.map((path) => (
+                <FilePanel
+                  key={path}
+                  projectPath={props.projectPath}
+                  path={path}
+                  active={path === state.active}
+                  onOpen={open}
                 />
-              </div>
-            ) : view === "read" && file !== null && file.content !== null ? (
-              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_220px]">
-                <div className="min-h-0 overflow-y-auto px-8 py-6">
-                  <div className="mx-auto max-w-3xl">
-                    <Markdown
-                      content={file.content}
-                      onOpenLink={(target) => open(resolveRelative(path, target))}
-                      resolveImage={(target) =>
-                        /^[a-z]+:/i.test(target)
-                          ? undefined
-                          : previewUrl(props.projectPath, resolveRelative(path, target))
-                      }
-                    />
-                  </div>
-                </div>
-                {outline.length > 1 && (
-                  <nav
-                    aria-label="Outline"
-                    className="hidden min-h-0 overflow-y-auto border-l border-border p-4 xl:block"
-                  >
-                    <p className="eyebrow mb-2 text-muted-foreground">Outline</p>
-                    <ul className="flex flex-col gap-1">
-                      {outline.map((heading, index) => (
-                        <li key={`${index}-${heading.id}`}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              document
-                                .getElementById(heading.id)
-                                ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                            }
-                            style={{ paddingLeft: `${(heading.level - 1) * 10}px` }}
-                            className="w-full cursor-pointer truncate text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {heading.text}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </nav>
-                )}
-              </div>
-            ) : file?.content === null ? (
-              <p className="p-4 text-xs text-muted-foreground">{file.reason}</p>
-            ) : file === null ? (
-              <p className="p-4 text-xs text-muted-foreground">Opening…</p>
-            ) : (
-              <pre className="min-h-0 flex-1 overflow-auto py-3 font-mono text-xs leading-relaxed">
-                {lines.map((line, index) => (
-                  <div key={index} className="flex">
-                    <span className="w-12 shrink-0 select-none pr-4 text-right text-muted-foreground/60">
-                      {index + 1}
-                    </span>
-                    <span className="whitespace-pre pr-4">{line || " "}</span>
-                  </div>
-                ))}
-              </pre>
-            )}
+              ))}
+            </div>
           </>
         )}
       </section>
