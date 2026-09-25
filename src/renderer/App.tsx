@@ -560,22 +560,13 @@ export function App() {
     if (pendingCount > seenPending) setDockOpen(true);
   }
 
-  const askTargets: AskTarget[] = session.panes
-    .filter((item) => item.modelId !== "" && readyProviders.includes(item.providerId))
-    .filter(
-      (item, index, all) =>
-        all.findIndex((p) => p.providerId === item.providerId && p.modelId === item.modelId) ===
-        index,
-    )
-    .map((item) => ({
-      id: `${item.providerId}:${item.modelId}`,
-      label:
-        item.modelId === DEFAULT_CLI_MODEL_ID
-          ? providerMeta(item.providerId).label
-          : `${providerMeta(item.providerId).label} · ${item.modelId}`,
-      providerId: item.providerId,
-      modelId: item.modelId,
-    }));
+  const askPane = session.panes.find(
+    (item) => item.modelId !== "" && readyProviders.includes(item.providerId),
+  );
+  const askFallback: AskTarget | undefined = askPane && {
+    providerId: askPane.providerId,
+    modelId: askPane.modelId,
+  };
 
   const openSettings = (destination: SettingsDestination) => {
     const target = SETTINGS_DESTINATIONS[destination];
@@ -1295,7 +1286,8 @@ export function App() {
 
         <HistoryDialog
           state={history}
-          askTargets={askTargets}
+          connections={connections}
+          askFallback={askFallback}
           onStateChange={setHistory}
           onOpenSession={(id) => {
             setHistory(null);
