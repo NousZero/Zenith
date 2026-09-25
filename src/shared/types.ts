@@ -60,6 +60,8 @@ export interface PaneMessage extends ChatMessage {
   id: string;
   // How many notes from past sessions went with this prompt; shown under it, never sent.
   recalled?: number;
+  // Why Zenith wrote this summary before sending, shown with it and never sent.
+  notice?: string;
 }
 
 // What one request carried to the model, for the context inspector.
@@ -197,6 +199,9 @@ export interface ProviderAdapter {
   listModels(): Promise<Model[]>;
   sendMessage(req: SendMessageRequest): AsyncIterable<ChatChunk>;
   validateCredential(cred: string): Promise<boolean>;
+  // The model's usable context window, for connections that can ask the model's server. inProject
+  // is true when the request will run as an agent in a project folder.
+  contextLimit?(model: string, inProject: boolean): Promise<number | undefined>;
 }
 
 export interface PaneState {
@@ -654,6 +659,12 @@ export interface ZenithApi {
       modelId: string;
       messages: ChatMessage[];
     }): Promise<string>;
+    // The context window a local server reports for a model, or null when there is none to ask.
+    contextLimit(request: {
+      providerId: string;
+      modelId: string;
+      projectPath: string | null;
+    }): Promise<number | null>;
     context(paneId: string): Promise<ContextSnapshot | null>;
     respondPermission(permissionId: string, optionId: string | null): Promise<void>;
     onPermission(listener: (request: PermissionRequest) => void): () => void;

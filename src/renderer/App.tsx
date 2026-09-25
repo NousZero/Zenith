@@ -386,7 +386,7 @@ export function App() {
             pane.messages.length === 0 && pane.lastError === null && !ready.has(pane.providerId);
           if (!untouched) return pane;
           changed = true;
-          return { ...pane, providerId: preferred.id, modelId };
+          return { ...pane, providerId: preferred.id, modelId, contextWindow: null };
         });
         return changed ? { ...current, panes } : current;
       });

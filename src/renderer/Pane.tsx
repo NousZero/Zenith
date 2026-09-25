@@ -68,6 +68,7 @@ import {
   COMPACT_THRESHOLD,
   contextLimit,
   contextUsed,
+  estimateMessages,
 } from "../shared/context";
 import { formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
@@ -421,6 +422,18 @@ export function Pane(props: {
         )
       : [];
   const [continueTarget, ...otherTargets] = continueTargets;
+  // Local servers are asked for their window only when a request goes, so no hint for them.
+  const continueLimit =
+    continueTarget && continueTarget.kind !== "local"
+      ? contextLimit({
+          providerId: continueTarget.id,
+          modelId: DEFAULT_CLI_MODEL_ID,
+          contextWindow: null,
+        })
+      : undefined;
+  const continueNeedsFit =
+    continueLimit !== undefined &&
+    estimateMessages(pane.messages) > continueLimit * COMPACT_THRESHOLD;
 
   useEffect(() => {
     let cancelled = false;
@@ -1020,17 +1033,21 @@ export function Pane(props: {
                     )}
                   </div>
                 ) : (
-                  <details
-                    key={message.id}
-                    className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px]"
-                  >
-                    <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
-                      Summary of earlier messages
-                    </summary>
-                    <div className="mt-2">
-                      <Markdown content={message.content} />
-                    </div>
-                  </details>
+                  <div key={message.id} className="flex flex-col gap-1.5">
+                    {message.notice && (
+                      <p role="status" className="text-xs leading-relaxed text-muted-foreground">
+                        {message.notice}
+                      </p>
+                    )}
+                    <details className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px]">
+                      <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+                        Summary of earlier messages
+                      </summary>
+                      <div className="mt-2">
+                        <Markdown content={message.content} />
+                      </div>
+                    </details>
+                  </div>
                 ),
               )}
 
@@ -1107,6 +1124,8 @@ export function Pane(props: {
                       <p className="text-[12px] leading-relaxed text-muted-foreground">
                         Another assistant can pick up from here. It gets this conversation, not{" "}
                         {provider.label}&apos;s own tool steps.
+                        {continueNeedsFit &&
+                          ` The conversation is too long for ${providerMeta(continueTarget.id).label}'s ${formatTokens(continueLimit)} window, so Zenith will summarise the earlier part to fit.`}
                       </p>
                     )}
                     <div className="flex flex-wrap gap-1.5">

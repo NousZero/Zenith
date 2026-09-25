@@ -1312,6 +1312,25 @@ export function registerIpcHandlers(options: {
     },
   );
 
+  handle(
+    "chat:contextLimit",
+    async (
+      _event,
+      payload: { providerId: string; modelId: string; projectPath: string | null },
+    ) => {
+      try {
+        const adapter = registry.get(String(payload.providerId));
+        return (
+          (await adapter.contextLimit?.(String(payload.modelId), !!payload.projectPath)) ?? null
+        );
+      } catch (error: unknown) {
+        // The window then uses its own conservative figure.
+        console.error(`Couldn't read the context window for ${String(payload.providerId)}`, error);
+        return null;
+      }
+    },
+  );
+
   // Bots answer paired users through chat connections only; agents that run tools are refused,
   // so a remote message can never start a tool.
   const botPlatform = (value: unknown): BotPlatform => {
