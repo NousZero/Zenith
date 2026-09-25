@@ -2,23 +2,58 @@ import { BarChart3, MessageCircleQuestion, Search, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { buildAskPrompt, splitHits } from "../shared/history";
-import type { HistoryExcerpt, SearchResult, SemanticStatus, UsageInsights } from "../shared/types";
+import type {
+  ConnectionStatus,
+  HistoryExcerpt,
+  Model,
+  SearchResult,
+  SemanticStatus,
+  UsageInsights,
+} from "../shared/types";
 import { Button } from "./components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./components/ui/dialog";
 import { Textarea } from "./components/ui/textarea";
 import { formatRelativeTime, formatTokens } from "./lib/format";
 import { cn } from "./lib/utils";
 import { Markdown } from "./Markdown";
-import { DEFAULT_CLI_MODEL_ID, providerMeta } from "./providers";
+import { DEFAULT_CLI_MODEL_ID, providerMeta, usesDefaultModel } from "./providers";
 import { describeSendError } from "./useHarness";
 
 export type HistoryTab = "search" | "ask" | "insights";
 
 export interface AskTarget {
-  id: string;
-  label: string;
   providerId: string;
   modelId: string;
+}
+
+const ASK_TARGET_KEY = "zenith.askTarget";
+const ASK_SELECT =
+  "h-8 min-w-0 max-w-48 cursor-pointer rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-60";
+
+// The assistant and model last used for Ask, so a local model once chosen stays chosen.
+function storedAskTarget(): AskTarget | undefined {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ASK_TARGET_KEY) ?? "null") as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as AskTarget).providerId === "string" &&
+      typeof (parsed as AskTarget).modelId === "string"
+    ) {
+      return parsed as AskTarget;
+    }
+  } catch {
+    // Unreadable storage just means no remembered choice.
+  }
+  return undefined;
+}
+
+function saveAskTarget(target: AskTarget): void {
+  try {
+    localStorage.setItem(ASK_TARGET_KEY, JSON.stringify(target));
+  } catch {
+    // Remembering the choice is a convenience; Ask works without it.
+  }
 }
 
 const TABS: { id: HistoryTab; label: string; icon: typeof Search }[] = [
@@ -192,17 +227,62 @@ function MeaningSearch() {
   );
 }
 
-function AskTab(props: { initialQuestion: string; targets: AskTarget[] }) {
+// Any ready assistant can answer, not only the ones open in panes: a local Ollama model keeps
+// questions about past sessions on this computer.
+function AskTab(props: {
+  initialQuestion: string;
+  connections: ConnectionStatus[];
+  fallback: AskTarget | undefined;
+}) {
   const [question, setQuestion] = useState(props.initialQuestion);
-  const [targetId, setTargetId] = useState(props.targets[0]?.id ?? "");
+  const ready = props.connections.filter((connection) => connection.state === "ready");
+  // Read once: the remembered choice if its assistant is still ready, else the open pane's.
+  const [start] = useState(() =>
+    [storedAskTarget(), props.fallback].find(
+      (candidate) =>
+        candidate && ready.some((connection) => connection.id === candidate.providerId),
+    ),
+  );
+  const [providerId, setProviderId] = useState(start?.providerId ?? ready[0]?.id ?? "");
+  const [modelId, setModelId] = useState(start?.modelId ?? "");
+  const [models, setModels] = useState<{ providerId: string; list: Model[] } | null>(null);
   const [answer, setAnswer] = useState("");
   const [excerpts, setExcerpts] = useState<HistoryExcerpt[]>([]);
   const [status, setStatus] = useState<"idle" | "asking" | "error">("idle");
   const [error, setError] = useState("");
   const active = useRef<{ requestId: string; unsubscribe(): void } | undefined>(undefined);
-  const target = props.targets.find((candidate) => candidate.id === targetId) ?? props.targets[0];
+  const connection = ready.find((candidate) => candidate.id === providerId) ?? ready[0];
+  const connectionId = connection?.id;
+  const connectionKind = connection?.kind;
 
   useEffect(() => () => active.current?.unsubscribe(), []);
+
+  useEffect(() => {
+    if (!connectionId || !connectionKind) return;
+    let cancelled = false;
+    window.zenith.providers
+      .listModels(connectionId)
+      .catch(() => [] as Model[])
+      .then((list) => {
+        if (cancelled) return;
+        // Tools that pick their own model answer with it when they list none.
+        const shown =
+          list.length === 0 && usesDefaultModel(connectionKind)
+            ? [{ id: DEFAULT_CLI_MODEL_ID, label: "Default" }]
+            : list;
+        setModels({ providerId: connectionId, list: shown });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionId, connectionKind]);
+
+  const modelList = models && models.providerId === connection?.id ? models.list : [];
+  const chosenModel = modelList.some((model) => model.id === modelId)
+    ? modelId
+    : (modelList[0]?.id ?? "");
+  const target: AskTarget | undefined =
+    connection && chosenModel ? { providerId: connection.id, modelId: chosenModel } : undefined;
 
   function finish() {
     active.current?.unsubscribe();
@@ -213,6 +293,7 @@ function AskTab(props: { initialQuestion: string; targets: AskTarget[] }) {
     const text = question.trim();
     if (!text || !target || status === "asking") return;
     finish();
+    saveAskTarget(target);
     setStatus("asking");
     setAnswer("");
     setError("");
@@ -252,11 +333,11 @@ function AskTab(props: { initialQuestion: string; targets: AskTarget[] }) {
     setStatus("idle");
   }
 
-  if (props.targets.length === 0) {
+  if (ready.length === 0) {
     return (
       <p className="py-8 text-center text-[13px] text-muted-foreground">
-        Set up a pane with a ready connection and model first; its model answers questions about
-        your history.
+        Set up an assistant in Settings first, such as Claude Code or a local Ollama model; it
+        answers questions about your history.
       </p>
     );
   }
@@ -282,14 +363,33 @@ function AskTab(props: { initialQuestion: string; targets: AskTarget[] }) {
         <label className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           Answer with
           <select
-            aria-label="Model that answers"
-            value={target?.id}
-            onChange={(event) => setTargetId(event.target.value)}
-            className="h-8 min-w-0 cursor-pointer rounded-md border border-input bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Assistant that answers"
+            value={connection?.id}
+            onChange={(event) => {
+              setProviderId(event.target.value);
+              setModelId("");
+            }}
+            className={ASK_SELECT}
           >
-            {props.targets.map((candidate) => (
+            {ready.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.label}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Model that answers"
+            value={chosenModel}
+            disabled={modelList.length === 0}
+            onChange={(event) => setModelId(event.target.value)}
+            className={ASK_SELECT}
+          >
+            {modelList.length === 0 && (
+              <option value="">{models ? "No models" : "Loading models…"}</option>
+            )}
+            {modelList.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
               </option>
             ))}
           </select>
@@ -301,7 +401,7 @@ function AskTab(props: { initialQuestion: string; targets: AskTarget[] }) {
             Stop
           </Button>
         ) : (
-          <Button size="sm" disabled={question.trim() === ""} onClick={() => void ask()}>
+          <Button size="sm" disabled={question.trim() === "" || !target} onClick={() => void ask()}>
             <MessageCircleQuestion />
             Ask
           </Button>
@@ -483,7 +583,9 @@ function InsightsTab() {
 
 export function HistoryDialog(props: {
   state: { tab: HistoryTab; query: string } | null;
-  askTargets: AskTarget[];
+  connections: ConnectionStatus[];
+  // The open pane's assistant, used for Ask until another one has been chosen.
+  askFallback: AskTarget | undefined;
   onStateChange(state: { tab: HistoryTab; query: string } | null): void;
   onOpenSession(id: string): void;
 }) {
@@ -521,7 +623,11 @@ export function HistoryDialog(props: {
           <SearchTab initialQuery={state.query} onOpenSession={props.onOpenSession} />
         )}
         {state?.tab === "ask" && (
-          <AskTab initialQuestion={state.query} targets={props.askTargets} />
+          <AskTab
+            initialQuestion={state.query}
+            connections={props.connections}
+            fallback={props.askFallback}
+          />
         )}
         {state?.tab === "insights" && <InsightsTab />}
       </DialogContent>
