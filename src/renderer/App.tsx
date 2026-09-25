@@ -457,6 +457,9 @@ export function App() {
   const onTabKey = useRef<(event: KeyboardEvent) => void>(undefined);
   useEffect(() => {
     onTabKey.current = (event) => {
+      // The Files page has tabs of its own for open files and handles the tab keys itself
+      // (FilesView.tsx). Only Cmd+T still opens a session from there.
+      if (activity === "files" && event.key.toLowerCase() !== "t") return;
       if (event.ctrlKey && event.key === "Tab") {
         event.preventDefault();
         const next = cycleTab(openTabs, sessionId, event.shiftKey ? -1 : 1);
