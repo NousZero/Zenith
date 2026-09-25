@@ -457,6 +457,8 @@ export function App() {
   const onTabKey = useRef<(event: KeyboardEvent) => void>(undefined);
   useEffect(() => {
     onTabKey.current = (event) => {
+      // The browser page has tabs of its own and takes these keys itself (see BrowserView.tsx).
+      if (activity === "browser") return;
       if (event.ctrlKey && event.key === "Tab") {
         event.preventDefault();
         const next = cycleTab(openTabs, sessionId, event.shiftKey ? -1 : 1);
