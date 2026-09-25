@@ -987,18 +987,24 @@ export function registerIpcHandlers(options: {
   });
 
   // The built-in browser the person uses; see browser-view.ts for how it is kept apart from Zenith.
-  handle("browser:navigate", async (event, urlOrQuery: unknown) => {
+  handle("browser:restore", async (event, saved: unknown) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     if (!window) throw new Error("The browser needs Zenith's window.");
-    browserView.navigate(window, urlOrQuery);
+    browserView.restore(window, saved);
   });
-  handle("browser:back", async () => browserView.back());
-  handle("browser:forward", async () => browserView.forward());
-  handle("browser:reload", async () => browserView.reload());
-  handle("browser:stop", async () => browserView.stop());
+  handle("browser:newTab", async () => browserView.newTab());
+  handle("browser:closeTab", async (_event, tabId: unknown) => browserView.closeTab(tabId));
+  handle("browser:activate", async (_event, tabId: unknown) => browserView.activate(tabId));
+  handle("browser:navigate", async (_event, tabId: unknown, urlOrQuery: unknown) =>
+    browserView.navigate(tabId, urlOrQuery),
+  );
+  handle("browser:back", async (_event, tabId: unknown) => browserView.back(tabId));
+  handle("browser:forward", async (_event, tabId: unknown) => browserView.forward(tabId));
+  handle("browser:reload", async (_event, tabId: unknown) => browserView.reload(tabId));
+  handle("browser:stop", async (_event, tabId: unknown) => browserView.stop(tabId));
   handle("browser:setBounds", async (_event, bounds: unknown) => browserView.setBounds(bounds));
   handle("browser:setVisible", async (_event, visible: unknown) => browserView.setVisible(visible));
-  handle("browser:openExternal", async () => browserView.openExternal());
+  handle("browser:openExternal", async (_event, tabId: unknown) => browserView.openExternal(tabId));
 
   handle("audit:list", async (_event, limit: unknown) =>
     audit.list(typeof limit === "number" ? limit : undefined),

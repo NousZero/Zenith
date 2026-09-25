@@ -1,6 +1,7 @@
 import type { CustomProvider, CustomProviderInput } from "./custom-providers";
 import type { BotPlatform, BotSettingsUpdate, BotStatus } from "./bots";
 import type { LibraryItem, LibraryKind } from "./library";
+import type { BrowserShortcut } from "./browser-tabs";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -398,8 +399,9 @@ export interface UsageInsights {
 
 export type PersonaFile = "SOUL.md" | "USER.md";
 
-// The built-in browser's page, as the address bar and toolbar show it.
-export interface BrowserViewState {
+// One tab of the built-in browser, as its tab, the address bar and the toolbar show it.
+export interface BrowserTabState {
+  id: string;
   url: string;
   title: string;
   canGoBack: boolean;
@@ -407,6 +409,12 @@ export interface BrowserViewState {
   loading: boolean;
   // Why the last page failed to load, such as ERR_NAME_NOT_RESOLVED.
   error: string | null;
+}
+
+// Every open tab in strip order, and the one showing.
+export interface BrowserTabs {
+  tabs: BrowserTabState[];
+  activeId: string | null;
 }
 
 export interface ZenithApi {
@@ -552,19 +560,29 @@ export interface ZenithApi {
   screen: {
     capture(): Promise<ImageAttachment>;
   };
-  // The built-in browser: one native page drawn over the window at the given bounds.
+  // The built-in browser: one native page per tab, the open one drawn over the window at the
+  // given bounds.
   browser: {
+    // Brings back the tabs saved before a restart, or, when main still has tabs, only publishes
+    // them. Main checks what it is given; see restorableTabs.
+    restore(saved: unknown): Promise<void>;
+    // Opens a blank tab after the others and shows it.
+    newTab(): Promise<void>;
+    closeTab(tabId: string): Promise<void>;
+    activate(tabId: string): Promise<void>;
     // An address, with or without a scheme, or words to search for.
-    navigate(urlOrQuery: string): Promise<void>;
-    back(): Promise<void>;
-    forward(): Promise<void>;
-    reload(): Promise<void>;
-    stop(): Promise<void>;
+    navigate(tabId: string, urlOrQuery: string): Promise<void>;
+    back(tabId: string): Promise<void>;
+    forward(tabId: string): Promise<void>;
+    reload(tabId: string): Promise<void>;
+    stop(tabId: string): Promise<void>;
     setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
     setVisible(visible: boolean): Promise<void>;
-    // Opens the current page in the system's default browser.
-    openExternal(): Promise<void>;
-    onState(listener: (state: BrowserViewState) => void): () => void;
+    // Opens the tab's page in the system's default browser.
+    openExternal(tabId: string): Promise<void>;
+    onState(listener: (state: BrowserTabs) => void): () => void;
+    // A tab key pressed while a web page had the focus, which the window never sees itself.
+    onShortcut(listener: (shortcut: BrowserShortcut) => void): () => void;
   };
   goals: {
     list(): Promise<Goal[]>;

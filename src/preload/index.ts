@@ -3,12 +3,13 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type { BotPlatform, BotSettingsUpdate, BotStatus } from "../shared/bots";
 import type { LibraryItem, LibraryKind } from "../shared/library";
+import type { BrowserShortcut } from "../shared/browser-tabs";
 import type {
   AuditEntry,
   ChatChunk,
   BoardCard,
   BoardStatus,
-  BrowserViewState,
+  BrowserTabs,
   GateResult,
   Goal,
   GoalInput,
@@ -205,21 +206,31 @@ const zenithApi: ZenithApi = {
     capture: (): Promise<ImageAttachment> => ipcRenderer.invoke("screen:capture"),
   },
   browser: {
-    navigate: (urlOrQuery: string): Promise<void> =>
-      ipcRenderer.invoke("browser:navigate", urlOrQuery),
-    back: (): Promise<void> => ipcRenderer.invoke("browser:back"),
-    forward: (): Promise<void> => ipcRenderer.invoke("browser:forward"),
-    reload: (): Promise<void> => ipcRenderer.invoke("browser:reload"),
-    stop: (): Promise<void> => ipcRenderer.invoke("browser:stop"),
+    restore: (saved: unknown): Promise<void> => ipcRenderer.invoke("browser:restore", saved),
+    newTab: (): Promise<void> => ipcRenderer.invoke("browser:newTab"),
+    closeTab: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:closeTab", tabId),
+    activate: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:activate", tabId),
+    navigate: (tabId: string, urlOrQuery: string): Promise<void> =>
+      ipcRenderer.invoke("browser:navigate", tabId, urlOrQuery),
+    back: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:back", tabId),
+    forward: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:forward", tabId),
+    reload: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:reload", tabId),
+    stop: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:stop", tabId),
     setBounds: (bounds: { x: number; y: number; width: number; height: number }): Promise<void> =>
       ipcRenderer.invoke("browser:setBounds", bounds),
     setVisible: (visible: boolean): Promise<void> =>
       ipcRenderer.invoke("browser:setVisible", visible),
-    openExternal: (): Promise<void> => ipcRenderer.invoke("browser:openExternal"),
-    onState(listener: (state: BrowserViewState) => void): () => void {
-      const handler = (_event: unknown, state: BrowserViewState) => listener(state);
+    openExternal: (tabId: string): Promise<void> =>
+      ipcRenderer.invoke("browser:openExternal", tabId),
+    onState(listener: (state: BrowserTabs) => void): () => void {
+      const handler = (_event: unknown, state: BrowserTabs) => listener(state);
       ipcRenderer.on("browser:state", handler);
       return () => ipcRenderer.removeListener("browser:state", handler);
+    },
+    onShortcut(listener: (shortcut: BrowserShortcut) => void): () => void {
+      const handler = (_event: unknown, shortcut: BrowserShortcut) => listener(shortcut);
+      ipcRenderer.on("browser:shortcut", handler);
+      return () => ipcRenderer.removeListener("browser:shortcut", handler);
     },
   },
   goals: {

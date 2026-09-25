@@ -460,6 +460,8 @@ export function App() {
       // The Files page has tabs of its own for open files and handles the tab keys itself
       // (FilesView.tsx). Only Cmd+T still opens a session from there.
       if (activity === "files" && event.key.toLowerCase() !== "t") return;
+      // The browser page has tabs of its own and takes these keys itself (see BrowserView.tsx).
+      if (activity === "browser") return;
       if (event.ctrlKey && event.key === "Tab") {
         event.preventDefault();
         const next = cycleTab(openTabs, sessionId, event.shiftKey ? -1 : 1);
