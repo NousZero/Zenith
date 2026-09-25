@@ -589,3 +589,41 @@ sends only the new message.
   which the next turn sends the transcript. A live two-turn Claude Code check (haiku, agent mode)
   continued the same session: the first turn wrote 13,638 tokens to the cache, the second wrote 92
   and read the rest from it.
+
+## Browser tabs (implemented 2026-09-25)
+
+The Browser page keeps several pages open. A tab strip above its toolbar, styled like the session
+tabs, shows each page's title (its address until it has loaded), a close button, and "+" for a
+blank tab with the address field focused.
+
+- **One view per tab, all guarded the same way.** `main/browser-view.ts` makes every tab's
+  `WebContentsView` in one function (`viewFor`), so each gets the same `persist:zenith-browser`
+  session, sandbox, no preload and the same http(s) checks on navigation, redirects and new
+  windows; the session's permission and download guards cover them all. Only the open tab's view
+  is visible; closing a tab removes its view and closes its web contents. Main keeps the tab list
+  and publishes all of it (`browser:state`, each tab with its id) on every change; the toolbar
+  IPC takes a tab id, plus `browser:newTab`, `browser:closeTab`, `browser:activate` and
+  `browser:restore`.
+- **New windows open as tabs.** A `target=_blank` link or `window.open` opens a tab next to its
+  opener, still only for http and https. Only the open tab may do it and the new tab takes its
+  place, so a page opening windows in a loop gets one tab until the person returns to it; at most
+  20 tabs are open.
+- **Keys** on the Browser page: ⌘T / Ctrl+T new tab, ⌘W / Ctrl+W close tab, ⌘L / Ctrl+L the
+  address field, ⌘1–⌘8 that tab and ⌘9 the last, Ctrl+Tab and Ctrl+Shift+Tab to cycle. The
+  session tabs' handler in `App.tsx` stands aside while the Browser page is open. Keys pressed
+  inside a web page never reach the window, so main catches the same keys in each view's
+  `before-input-event` (`browserShortcut` in `shared/browser-tabs.ts`, shared by both sides),
+  which also keeps the menu from closing the window on ⌘W, and hands them to the window.
+- **Kept across restarts:** the tabs' addresses in order and the open one, in `localStorage`
+  (`zenith.browserTabs`). Main reads them without trusting them (`restorableTabs`: http, https or
+  blank only, at most 20). Only the open tab loads; the others load when first shown.
+- Favicons are left out: showing them would load images from each site into Zenith's own window,
+  outside the browser's separate session.
+- **Verified:** unit tests for the restore rules and the keys; an e2e test that opens two tabs,
+  switches and checks the title and address follow, closes one, uses the keys in the window and
+  (through `sendInputEvent`) inside the page, opens a `target=_blank` link as a tab beside its
+  opener while a `file:` one opens nothing, sees five `window.open` calls give one tab, and
+  restarts to find the tabs in order with the same one open. In the running app, a real click on
+  a `target=_blank` link opened the tab beside the page, real ⌘L, ⌘T and ⌘W keystrokes worked with
+  the page focused and left the window open, Settings drew over the hidden page, and after a
+  restart only the open tab's page was requested from the server.
